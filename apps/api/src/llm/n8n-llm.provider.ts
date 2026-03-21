@@ -1,0 +1,141 @@
+import { BadGatewayException, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { N8nService } from '../n8n/n8n.service';
+import { buildLlmPrompt } from './llm.prompt';
+import { LlmProvider } from './llm.provider';
+import { LlmAnalysisInput, LlmStructuredResult } from './llm.types';
+
+@Injectable()
+export class N8nLlmProvider implements LlmProvider {
+  readonly providerName = 'n8n';
+  readonly modelName?: string;
+
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly n8nService: N8nService,
+  ) {
+    this.modelName = this.configService.get<string>('llm.model') ?? 'ollama';
+  }
+
+  async analyze(input: LlmAnalysisInput): Promise<LlmStructuredResult> {
+    const prompt = buildLlmPrompt(input);
+    const payload = {
+      prompt,
+      projectTitle: input.projectTitle,
+      sourceText: input.sourceText,
+      departments: input.departments,
+      expectedSchema: {
+        summary: 'string',
+        tasks: [{ title: 'string', description: 'string', priority: 'high|medium|low' }],
+        departmentSuggestions: [
+          {
+            departmentCode: 'string',
+            relevanceReason: 'string',
+            problemFragment: 'string',
+            adaptedPitch: 'string',
+            emailSubject: 'string',
+            emailBody: 'string',
+          },
+        ],
+      },
+    };
+
+    const raw = await this.n8nService.runLlmWorkflow(payload);
+    if (raw === null) {
+      throw new BadGatewayException(
+        'Не задан N8N_LLM_WEBHOOK_URL для провайдера LLM через n8n',
+      );
+    }
+
+    const parsed = this.normalizeResult(raw);
+    this.validateResult(parsed);
+    return parsed;
+  }
+
+  private normalizeResult(raw: unknown): LlmStructuredResult {
+    const firstLayer = this.unwrap(raw);
+    if (this.isLlmStructuredResult(firstLayer)) {
+      return firstLayer;
+    }
+
+    if (typeof firstLayer === 'string') {
+      const parsed = this.parseJsonString(firstLayer);
+      if (this.isLlmStructuredResult(parsed)) {
+        return parsed;
+      }
+    }
+
+    if (typeof firstLayer === 'object' && firstLayer !== null) {
+      const obj = firstLayer as Record<string, unknown>;
+      const candidateKeys = ['result', 'data', 'output', 'content', 'answer', 'json'];
+      for (const key of candidateKeys) {
+        const candidate = this.unwrap(obj[key]);
+        if (this.isLlmStructuredResult(candidate)) {
+          return candidate;
+        }
+        if (typeof candidate === 'string') {
+          const parsed = this.parseJsonString(candidate);
+          if (this.isLlmStructuredResult(parsed)) {
+            return parsed;
+          }
+        }
+      }
+    }
+
+    throw new BadGatewayException(
+      'N8N LLM workflow вернул ответ не в ожидаемом формате JSON',
+    );
+  }
+
+  private unwrap(value: unknown): unknown {
+    if (Array.isArray(value) && value.length > 0) {
+      return value[0];
+    }
+    return value;
+  }
+
+  private parseJsonString(value: string): unknown {
+    const text = value.trim();
+    const firstBrace = text.indexOf('{');
+    const lastBrace = text.lastIndexOf('}');
+    const jsonText =
+      firstBrace >= 0 && lastBrace >= 0
+        ? text.slice(firstBrace, lastBrace + 1)
+        : text;
+
+    try {
+      return JSON.parse(jsonText) as unknown;
+    } catch {
+      return null;
+    }
+  }
+
+  private isLlmStructuredResult(value: unknown): value is LlmStructuredResult {
+    if (!value || typeof value !== 'object') {
+      return false;
+    }
+
+    const candidate = value as Record<string, unknown>;
+    return (
+      typeof candidate.summary === 'string' &&
+      Array.isArray(candidate.tasks) &&
+      Array.isArray(candidate.departmentSuggestions)
+    );
+  }
+
+  private validateResult(result: LlmStructuredResult): void {
+    if (!result.summary.trim()) {
+      throw new BadGatewayException('N8N LLM workflow вернул пустой summary');
+    }
+
+    if (!Array.isArray(result.tasks)) {
+      throw new BadGatewayException('N8N LLM workflow не вернул массив tasks');
+    }
+
+    if (!Array.isArray(result.departmentSuggestions)) {
+      throw new BadGatewayException(
+        'N8N LLM workflow не вернул массив departmentSuggestions',
+      );
+    }
+  }
+}
