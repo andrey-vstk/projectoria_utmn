@@ -10,7 +10,7 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: 'Платформа индустриальных проектов ТюмГУ',
+  title: 'Проектория',
   description: 'MVP платформа обработки запросов индустриальных заказчиков',
 };
 

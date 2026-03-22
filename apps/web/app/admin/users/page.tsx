@@ -92,14 +92,19 @@ export default function AdminUsersPage() {
           <div>
             <h1 className="page-title">Админка: пользователи</h1>
             <p className="page-subtitle">
-              Создание аккаунтов, смена роли и отключение доступа.
+              Создание аккаунтов, смена роли и отключение доступа сотрудников.
             </p>
           </div>
         </div>
 
         <AdminOnly>
-          <Card>
-            <h3>Создать пользователя</h3>
+          <Card className="card-soft">
+            <div className="section-head">
+              <div>
+                <h3 className="section-title">Создать пользователя</h3>
+              </div>
+            </div>
+
             <form onSubmit={createUser} className="grid-3">
               <div className="field">
                 <label className="label">Email</label>
@@ -112,11 +117,7 @@ export default function AdminUsersPage() {
               </div>
               <div className="field">
                 <label className="label">ФИО</label>
-                <Input
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  required
-                />
+                <Input value={fullName} onChange={(e) => setFullName(e.target.value)} required />
               </div>
               <div className="field">
                 <label className="label">Пароль</label>
@@ -134,8 +135,8 @@ export default function AdminUsersPage() {
                   value={role}
                   onChange={(e) => setRole(e.target.value as 'ADMIN' | 'INITIATOR')}
                 >
-                  <option value="INITIATOR">initiator</option>
-                  <option value="ADMIN">admin</option>
+                  <option value="INITIATOR">Инициатор</option>
+                  <option value="ADMIN">Администратор</option>
                 </select>
               </div>
               <div style={{ alignSelf: 'end' }}>
@@ -145,8 +146,14 @@ export default function AdminUsersPage() {
           </Card>
 
           <Card>
+            <div className="section-head">
+              <div>
+                <h3 className="section-title">Список пользователей</h3>
+              </div>
+            </div>
+
             {loading ? <p className="muted">Загрузка...</p> : null}
-            {error ? <p className="danger">{error}</p> : null}
+            {error ? <p className="message-danger">{error}</p> : null}
 
             {!loading ? (
               <div className="table-wrap">
@@ -179,8 +186,8 @@ export default function AdminUsersPage() {
                               )
                             }
                           >
-                            <option value="INITIATOR">initiator</option>
-                            <option value="ADMIN">admin</option>
+                            <option value="INITIATOR">Инициатор</option>
+                            <option value="ADMIN">Администратор</option>
                           </select>
                         </td>
                         <td>

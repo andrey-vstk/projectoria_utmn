@@ -8,9 +8,9 @@ export function AdminOnly({ children }: { children: React.ReactNode }) {
 
   if (user?.role !== 'ADMIN') {
     return (
-      <Card>
-        <h3>Доступ ограничен</h3>
-        <p className="muted">Эта страница доступна только администраторам.</p>
+      <Card className="card-soft">
+        <h3 className="section-title">Доступ ограничен</h3>
+        <p className="section-subtitle">Эта страница доступна только администраторам.</p>
       </Card>
     );
   }

@@ -48,9 +48,16 @@ export default function ProjectResponsesPage() {
           </Link>
         </div>
 
-        <Card>
+        <Card className="card-soft">
+          <div className="section-head">
+            <div>
+              <h3 className="section-title">Журнал откликов</h3>
+            </div>
+          </div>
+
           {loading ? <p className="muted">Загрузка...</p> : null}
-          {error ? <p className="danger">{error}</p> : null}
+          {error ? <p className="message-danger">{error}</p> : null}
+
           {!loading ? (
             <div className="table-wrap">
               <table>

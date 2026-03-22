@@ -116,8 +116,13 @@ export default function AdminDepartmentsPage() {
         </div>
 
         <AdminOnly>
-          <Card>
-            <h3>Добавить подразделение</h3>
+          <Card className="card-soft">
+            <div className="section-head">
+              <div>
+                <h3 className="section-title">Добавить подразделение</h3>
+              </div>
+            </div>
+
             <form onSubmit={createDepartment} className="grid-2">
               <div className="field">
                 <label className="label">Код</label>
@@ -132,7 +137,7 @@ export default function AdminDepartmentsPage() {
                 <Textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  style={{ minHeight: 80 }}
+                  style={{ minHeight: 90 }}
                 />
               </div>
               <div className="field" style={{ gridColumn: '1 / -1' }}>
@@ -151,8 +156,14 @@ export default function AdminDepartmentsPage() {
           </Card>
 
           <Card>
+            <div className="section-head">
+              <div>
+                <h3 className="section-title">Список подразделений</h3>
+              </div>
+            </div>
+
             {loading ? <p className="muted">Загрузка...</p> : null}
-            {error ? <p className="danger">{error}</p> : null}
+            {error ? <p className="message-danger">{error}</p> : null}
 
             {!loading ? (
               <div className="table-wrap">
@@ -202,20 +213,23 @@ export default function AdminDepartmentsPage() {
                           />
                         </td>
                         <td>
-                          <input
-                            type="checkbox"
-                            checked={item.isActive}
-                            onChange={(e) =>
-                              setItems((prev) =>
-                                prev.map((d) =>
-                                  d.id === item.id ? { ...d, isActive: e.target.checked } : d,
-                                ),
-                              )
-                            }
-                          />
+                          <label className="check-label">
+                            <input
+                              type="checkbox"
+                              checked={item.isActive}
+                              onChange={(e) =>
+                                setItems((prev) =>
+                                  prev.map((d) =>
+                                    d.id === item.id ? { ...d, isActive: e.target.checked } : d,
+                                  ),
+                                )
+                              }
+                            />
+                            {item.isActive ? 'Да' : 'Нет'}
+                          </label>
                         </td>
                         <td>
-                          <div style={{ display: 'flex', gap: 8 }}>
+                          <div className="form-actions">
                             <Button variant="secondary" onClick={() => void updateDepartment(item)}>
                               Сохранить
                             </Button>

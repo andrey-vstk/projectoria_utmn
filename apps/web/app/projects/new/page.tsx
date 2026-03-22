@@ -65,13 +65,24 @@ export default function NewProjectPage() {
           <div>
             <h1 className="page-title">Новый проект</h1>
             <p className="page-subtitle">
-              Введите стенограмму вручную или загрузите `.txt` файл.
+              Введите стенограмму вручную или загрузите файл `.txt` для автоматического
+              извлечения текста.
             </p>
           </div>
         </div>
 
-        <Card>
-          <form onSubmit={onSubmit} style={{ display: 'grid', gap: 16 }}>
+        <Card className="card-soft">
+          <div className="section-head">
+            <div>
+              <h3 className="section-title">Карточка запроса</h3>
+              <p className="section-subtitle">
+                После сохранения можно запускать анализ LLM, редактировать письма и рассылать их
+                подразделениям.
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={onSubmit} className="stack-md">
             <div className="field">
               <label className="label">Название проекта</label>
               <Input
@@ -98,9 +109,9 @@ export default function NewProjectPage() {
               {uploading ? <span className="muted">Извлекаем текст...</span> : null}
             </div>
 
-            {error ? <p className="danger">{error}</p> : null}
+            {error ? <p className="message-danger">{error}</p> : null}
 
-            <div style={{ display: 'flex', gap: 12 }}>
+            <div className="form-actions">
               <Button type="submit" disabled={submitting || uploading}>
                 {submitting ? 'Сохраняем...' : 'Создать проект'}
               </Button>

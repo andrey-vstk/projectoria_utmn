@@ -59,28 +59,31 @@ export default function PublicResponsePage() {
   };
 
   return (
-    <div className="auth-page" style={{ padding: 20 }}>
+    <div className="auth-page">
       <Card className="auth-card">
-        <h1 className="page-title" style={{ fontSize: 28 }}>
-          Отклик на проект
-        </h1>
+        <h1 className="auth-title">Отклик на проект</h1>
+        <p className="auth-subtitle">
+          Подтвердите заинтересованность подразделения и оставьте контактные данные.
+        </p>
 
         {loading ? <p className="muted">Проверяем ссылку...</p> : null}
-        {error ? <p className="danger">{error}</p> : null}
+        {error ? <p className="message-danger">{error}</p> : null}
 
         {status ? (
-          <>
-            <p>
-              <b>Проект:</b> {status.project.title}
-            </p>
-            <p>
-              <b>Подразделение:</b> {status.department.name} ({status.department.code})
-            </p>
+          <div className="stack-md">
+            <Card className="card-soft">
+              <p style={{ margin: 0 }}>
+                <b>Проект:</b> {status.project.title}
+              </p>
+              <p style={{ margin: '10px 0 0' }}>
+                <b>Подразделение:</b> {status.department.name} ({status.department.code})
+              </p>
+            </Card>
 
             {status.tokenUsed ? (
               <p className="notice">Ссылка уже была использована. Спасибо за отклик.</p>
             ) : (
-              <form onSubmit={onSubmit} style={{ display: 'grid', gap: 12 }}>
+              <form onSubmit={onSubmit} className="stack-sm">
                 <div className="field">
                   <label className="label">Имя (опционально)</label>
                   <Input value={name} onChange={(e) => setName(e.target.value)} />
@@ -99,10 +102,10 @@ export default function PublicResponsePage() {
                 </Button>
               </form>
             )}
-          </>
+          </div>
         ) : null}
 
-        {message ? <p className="success">{message}</p> : null}
+        {message ? <p className="message-success">{message}</p> : null}
       </Card>
     </div>
   );

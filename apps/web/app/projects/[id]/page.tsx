@@ -3,8 +3,8 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ProtectedPage } from '@/components/protected-page';
 import { ProjectStatusBadge } from '@/components/project-status-badge';
+import { ProtectedPage } from '@/components/protected-page';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -39,6 +39,7 @@ export default function ProjectDetailPage() {
         withCsrf: false,
       });
       setProject(data);
+
       const map: Record<string, SuggestionDraft> = {};
       data.analysis?.suggestions.forEach((item) => {
         map[item.id] = {
@@ -93,6 +94,7 @@ export default function ProjectDetailPage() {
 
   const saveSuggestions = async () => {
     if (!project?.analysis) return;
+
     setSaving(true);
     setError(null);
     try {
@@ -112,6 +114,7 @@ export default function ProjectDetailPage() {
 
   const approveAndSend = async () => {
     if (!project?.analysis) return;
+
     setProcessing(true);
     setError(null);
     try {
@@ -152,19 +155,27 @@ export default function ProjectDetailPage() {
               <ProjectStatusBadge status={project.status} />
             </div>
 
-            {error ? <p className="danger">{error}</p> : null}
+            {error ? <p className="message-danger">{error}</p> : null}
 
-            <Card>
-              <h3>Исходный текст</h3>
-              <p className="muted" style={{ whiteSpace: 'pre-wrap' }}>
-                {project.sourceText}
-              </p>
+            <Card className="card-soft">
+              <div className="section-head">
+                <div>
+                  <h3 className="section-title">Исходный текст</h3>
+                  <p className="section-subtitle">Содержимое запроса заказчика без изменений.</p>
+                </div>
+              </div>
+              <p className="muted text-prewrap">{project.sourceText}</p>
             </Card>
 
             <Card>
-              <div className="page-head" style={{ marginBottom: 12 }}>
-                <h3 style={{ margin: 0 }}>Анализ</h3>
-                <div style={{ display: 'flex', gap: 8 }}>
+              <div className="section-head">
+                <div>
+                  <h3 className="section-title">Анализ</h3>
+                  <p className="section-subtitle">
+                    Запуск LLM-обработки и обзор декомпозиции запроса.
+                  </p>
+                </div>
+                <div className="section-actions">
                   <Button onClick={runAnalysis} disabled={!canRunAnalysis || processing}>
                     {processing ? 'Запуск...' : 'Запустить анализ'}
                   </Button>
@@ -172,33 +183,45 @@ export default function ProjectDetailPage() {
               </div>
 
               {project.analysis ? (
-                <>
+                <div className="stack-md">
                   <p>
                     <b>Summary:</b> {project.analysis.summary || '—'}
                   </p>
+
                   <div className="grid-2">
-                    <div>
-                      <h4>Декомпозиция задач</h4>
-                      <ul>
+                    <Card className="card-soft">
+                      <div className="section-head">
+                        <div>
+                          <h4 className="section-title">Декомпозиция задач</h4>
+                        </div>
+                      </div>
+                      <ul className="stack-sm" style={{ margin: 0, paddingLeft: 18 }}>
                         {project.analysis.tasksJson?.map((task, index) => (
-                          <li key={`${task.title}-${index}`} style={{ marginBottom: 10 }}>
-                            <b>{task.title}</b> ({task.priority})<br />
+                          <li key={`${task.title}-${index}`}>
+                            <b>{task.title}</b> ({task.priority})
+                            <br />
                             <span className="muted">{task.description}</span>
                           </li>
                         ))}
                       </ul>
-                    </div>
-                    <div>
-                      <h4>Статус генерации</h4>
+                    </Card>
+
+                    <Card className="card-soft">
+                      <div className="section-head">
+                        <div>
+                          <h4 className="section-title">Статус генерации</h4>
+                        </div>
+                      </div>
                       <Badge tone="info">
                         {PROJECT_STATUS_LABELS[project.status] ?? project.status}
                       </Badge>
                       <p className="muted" style={{ marginTop: 12 }}>
-                        Можно вручную скорректировать тексты писем и исключить подразделения.
+                        Можно вручную скорректировать тексты писем и исключить подразделения из
+                        рассылки.
                       </p>
-                    </div>
+                    </Card>
                   </div>
-                </>
+                </div>
               ) : (
                 <p className="muted">Анализ пока не запущен.</p>
               )}
@@ -206,9 +229,14 @@ export default function ProjectDetailPage() {
 
             {project.analysis ? (
               <Card>
-                <div className="page-head" style={{ marginBottom: 12 }}>
-                  <h3 style={{ margin: 0 }}>Рекомендации по подразделениям</h3>
-                  <div style={{ display: 'flex', gap: 8 }}>
+                <div className="section-head">
+                  <div>
+                    <h3 className="section-title">Рекомендации по подразделениям</h3>
+                    <p className="section-subtitle">
+                      Отредактируйте письма и выберите подразделения перед рассылкой.
+                    </p>
+                  </div>
+                  <div className="section-actions">
                     <Button variant="secondary" onClick={saveSuggestions} disabled={saving}>
                       {saving ? 'Сохраняем...' : 'Сохранить правки'}
                     </Button>
@@ -217,19 +245,20 @@ export default function ProjectDetailPage() {
                     </Button>
                   </div>
                 </div>
-                <div style={{ display: 'grid', gap: 14 }}>
+
+                <div className="stack-md">
                   {project.analysis.suggestions.map((item) => (
-                    <Card key={item.id} className="notice">
-                      <div className="page-head" style={{ marginBottom: 8 }}>
+                    <Card key={item.id} className="card-soft">
+                      <div className="section-head">
                         <div>
-                          <b>
+                          <h4 className="section-title">
                             {item.department.code} — {item.department.name}
-                          </b>
-                          <p className="muted" style={{ margin: '4px 0 0' }}>
+                          </h4>
+                          <p className="section-subtitle">
                             Адресаты: {item.department.recipients.map((r) => r.email).join(', ')}
                           </p>
                         </div>
-                        <label style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+                        <label className="check-label">
                           <input
                             type="checkbox"
                             checked={drafts[item.id]?.includeInMailing ?? item.includeInMailing}
@@ -248,12 +277,14 @@ export default function ProjectDetailPage() {
                         </label>
                       </div>
 
-                      <p>
-                        <b>Почему релевантно:</b> {item.relevanceReason}
-                      </p>
-                      <p>
-                        <b>Адаптированное объяснение:</b> {item.adaptedPitch}
-                      </p>
+                      <div className="stack-sm">
+                        <p>
+                          <b>Почему релевантно:</b> {item.relevanceReason}
+                        </p>
+                        <p>
+                          <b>Адаптированное объяснение:</b> {item.adaptedPitch}
+                        </p>
+                      </div>
 
                       <div className="field">
                         <label className="label">Тема письма</label>
@@ -271,7 +302,7 @@ export default function ProjectDetailPage() {
                               },
                             }))
                           }
-                          style={{ minHeight: 74 }}
+                          style={{ minHeight: 84 }}
                         />
                       </div>
 
@@ -300,13 +331,19 @@ export default function ProjectDetailPage() {
             ) : null}
 
             <Card>
-              <div className="page-head">
-                <h3 style={{ margin: 0 }}>Рассылка и отклики</h3>
+              <div className="section-head">
+                <div>
+                  <h3 className="section-title">Рассылка и отклики</h3>
+                  <p className="section-subtitle">
+                    Статусы отправки писем и факт отклика по уникальной ссылке.
+                  </p>
+                </div>
                 <Link href={`/projects/${project.id}/responses`}>
                   <Button variant="secondary">Открыть список откликов</Button>
                 </Link>
               </div>
-              <div className="table-wrap" style={{ marginTop: 10 }}>
+
+              <div className="table-wrap">
                 <table>
                   <thead>
                     <tr>

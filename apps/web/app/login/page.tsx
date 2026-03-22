@@ -3,11 +3,11 @@
 import Image from 'next/image';
 import { FormEvent, Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useAuth } from '@/lib/auth-context';
-import { ApiError } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { ApiError } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 
 function LoginForm() {
   const { login } = useAuth();
@@ -43,19 +43,18 @@ function LoginForm() {
           <Image
             src="/utmn-logo.svg"
             alt="Логотип ТюмГУ"
-            width={56}
-            height={56}
+            width={58}
+            height={58}
             className="auth-logo"
             priority
           />
         </div>
-        <h1 className="page-title" style={{ fontSize: 26 }}>
-          Вход в систему
-        </h1>
-        <p className="page-subtitle">
-          Доступ открыт только для сотрудников из разрешенного списка.
+        <h1 className="auth-title">Вход в систему</h1>
+        <p className="auth-subtitle">
+          Доступ открыт только для сотрудников из разрешенного списка университета.
         </p>
-        <form onSubmit={onSubmit} style={{ display: 'grid', gap: 12, marginTop: 16 }}>
+
+        <form onSubmit={onSubmit} className="auth-form">
           <div className="field">
             <label className="label">Email</label>
             <Input
@@ -66,6 +65,7 @@ function LoginForm() {
               required
             />
           </div>
+
           <div className="field">
             <label className="label">Пароль</label>
             <Input
@@ -77,7 +77,7 @@ function LoginForm() {
             />
           </div>
 
-          {error ? <div className="danger">{error}</div> : null}
+          {error ? <div className="message-danger">{error}</div> : null}
 
           <Button type="submit" disabled={loading}>
             {loading ? 'Выполняем вход...' : 'Войти'}

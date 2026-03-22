@@ -67,8 +67,13 @@ export default function AdminSettingsPage() {
         </div>
 
         <AdminOnly>
-          <Card>
-            <h3>Добавить / обновить настройку</h3>
+          <Card className="card-soft">
+            <div className="section-head">
+              <div>
+                <h3 className="section-title">Добавить / обновить настройку</h3>
+              </div>
+            </div>
+
             <form onSubmit={upsert} className="grid-3">
               <div className="field">
                 <label className="label">Ключ</label>
@@ -85,8 +90,15 @@ export default function AdminSettingsPage() {
           </Card>
 
           <Card>
+            <div className="section-head">
+              <div>
+                <h3 className="section-title">Текущие настройки</h3>
+              </div>
+            </div>
+
             {loading ? <p className="muted">Загрузка...</p> : null}
-            {error ? <p className="danger">{error}</p> : null}
+            {error ? <p className="message-danger">{error}</p> : null}
+
             {!loading ? (
               <div className="table-wrap">
                 <table>
