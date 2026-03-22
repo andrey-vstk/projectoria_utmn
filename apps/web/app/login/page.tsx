@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { FormEvent, Suspense, useState } from 'react';
+import { FormEvent, Suspense, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -17,6 +17,9 @@ function LoginForm() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const marqueeRows = useMemo(() => Array.from({ length: 4 }, (_, index) => index), []);
+  const marqueeWords = useMemo(() => Array.from({ length: 8 }, () => 'ПРОЕКТОРИЯ'), []);
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -37,7 +40,35 @@ function LoginForm() {
   };
 
   return (
-    <div className="auth-page">
+    <div className="auth-page auth-page-login">
+      <div className="auth-bg-marquee" aria-hidden>
+        {marqueeRows.map((rowIndex) => (
+          <div
+            key={rowIndex}
+            className={`auth-bg-marquee-row ${
+              rowIndex % 2 === 1 ? 'auth-bg-marquee-row-reverse' : ''
+            }`}
+          >
+            <div className="auth-bg-marquee-loop">
+              <div className="auth-bg-marquee-track">
+                {marqueeWords.map((word, wordIndex) => (
+                  <span className="auth-bg-marquee-word" key={`row-${rowIndex}-left-${wordIndex}`}>
+                    {word}
+                  </span>
+                ))}
+              </div>
+              <div className="auth-bg-marquee-track" aria-hidden>
+                {marqueeWords.map((word, wordIndex) => (
+                  <span className="auth-bg-marquee-word" key={`row-${rowIndex}-right-${wordIndex}`}>
+                    {word}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
       <Card className="auth-card">
         <div className="auth-logo-wrap">
           <Image
@@ -92,7 +123,7 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="auth-page">
+        <div className="auth-page auth-page-login">
           <Card className="auth-card">
             <p className="muted">Загрузка формы входа...</p>
           </Card>

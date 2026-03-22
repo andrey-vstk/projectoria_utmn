@@ -46,6 +46,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   ];
 
   const visibleItems = items.filter((item) => !item.adminOnly || user?.role === 'ADMIN');
+  const hideHeader = !user && pathname === '/login';
 
   const isActiveLink = (href: string) => {
     if (href === '/') {
@@ -56,44 +57,52 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="app-shell">
-      <header className="app-header">
-        <div className="app-header-inner">
-          <div className="brand-area">
-            <Image
-              src="/utmn-logo.svg"
-              alt="Логотип ТюмГУ"
-              width={38}
-              height={38}
-              className="brand-logo"
-              priority
-            />
-            <div>
-              <p className="brand-title">Проектория</p>
-              <p className="brand-subtitle">Тюменский государственный университет</p>
+      {!hideHeader ? (
+        <header className="app-header">
+          <div className="app-header-inner">
+            <div className="brand-area">
+              <Image
+                src="/utmn-logo.svg"
+                alt="Логотип ТюмГУ"
+                width={38}
+                height={38}
+                className="brand-logo"
+                priority
+              />
+              <div>
+                <p className="brand-title">Проектория</p>
+                <p className="brand-subtitle">Тюменский государственный университет</p>
+              </div>
             </div>
+            {user ? (
+              <div className="header-meta">
+                <Badge tone="info">Уведомления: {unreadCount}</Badge>
+                <span className="user-chip">
+                  {user.fullName} ({user.role === 'ADMIN' ? 'Администратор' : 'Инициатор'})
+                </span>
+                <Button
+                  variant="secondary"
+                  onClick={async () => {
+                    await logout();
+                    router.push('/login');
+                  }}
+                >
+                  Выйти
+                </Button>
+              </div>
+            ) : null}
           </div>
-          {user ? (
-            <div className="header-meta">
-              <Badge tone="info">Уведомления: {unreadCount}</Badge>
-              <span className="user-chip">
-                {user.fullName} ({user.role === 'ADMIN' ? 'Администратор' : 'Инициатор'})
-              </span>
-              <Button
-                variant="secondary"
-                onClick={async () => {
-                  await logout();
-                  router.push('/login');
-                }}
-              >
-                Выйти
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      </header>
+        </header>
+      ) : null}
 
       <div className="app-body">
-        <div className={cn('app-layout', !user && 'app-layout-auth')}>
+        <div
+          className={cn(
+            'app-layout',
+            !user && 'app-layout-auth',
+            hideHeader && 'app-layout-no-header',
+          )}
+        >
           {user ? (
             <aside className="app-sidebar">
               {visibleItems.map((item) => (
