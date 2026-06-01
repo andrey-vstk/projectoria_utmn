@@ -1,0 +1,143 @@
+{
+  "name": "Projectoria LLM Analyze (Remote Ollama qwen3.6:35b)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "llm-analyze",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "c9123f5d-fd62-48c8-a2b8-7c76f0e2f8b1",
+      "name": "Webhook LLM Analyze",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -900,
+        300
+      ],
+      "webhookId": "projectoria-llm-analyze"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const first = items?.[0]?.json ?? {};\nconst payload = first.body ?? first;\n\nconst sourceTextRaw = (payload.sourceText || payload.text || payload.prompt || '').toString().trim();\nif (!sourceTextRaw) {\n  throw new Error('Нужно передать sourceText (или text/prompt)');\n}\n\nconst maxInputChars = Number(payload.maxInputChars || 12000);\nconst sourceText = sourceTextRaw.length > maxInputChars\n  ? `${sourceTextRaw.slice(0, maxInputChars)}\\n\\n[Текст сокращен для LLM по лимиту ${maxInputChars} символов]`\n  : sourceTextRaw;\n\nconst projectTitle = (payload.projectTitle || payload.title || 'Без названия').toString().trim();\nconst model = (payload.model || 'qwen3.6:35b').toString().trim();\nconst departments = Array.isArray(payload.departments) ? payload.departments : [];\n\nconst deptList = departments\n  .map((d) => {\n    const code = (d?.code || '').toString().trim();\n    const name = (d?.name || '').toString().trim();\n    const description = (d?.description || '').toString().trim();\n    if (!code && !name) return null;\n    return `- ${code || 'N/A'} | ${name || 'Без названия'}${description ? ` | ${description}` : ''}`;\n  })\n  .filter(Boolean)\n  .join('\\n');\n\nconst systemPrompt = [\n  'Ты аналитик университета.',\n  'Верни только ОДИН валидный JSON-объект. Никакого markdown, комментариев и пояснений.',\n  'Не выдумывай факты. Если данных мало — явно укажи это в тексте полей.',\n  'Пиши максимально лаконично.',\n  'Приоритет строго: high | medium | low.',\n  'Ограничения объема:',\n  '- summary: до 700 символов',\n  '- tasks: максимум 6 элементов',\n  '- task.description: до 220 символов',\n  '- departmentSuggestions: максимум 4 элемента',\n  '- emailBody: до 900 символов',\n  'Структура строго такая:',\n  '{',\n  '  \"summary\": \"...\",',\n  '  \"tasks\": [',\n  '    { \"title\": \"...\", \"description\": \"...\", \"priority\": \"high|medium|low\" }',\n  '  ],',\n  '  \"departmentSuggestions\": [',\n  '    {',\n  '      \"departmentCode\": \"...\",',\n  '      \"relevanceReason\": \"...\",',\n  '      \"problemFragment\": \"...\",',\n  '      \"adaptedPitch\": \"...\",',\n  '      \"emailSubject\": \"...\",',\n  '      \"emailBody\": \"...\"',\n  '    }',\n  '  ]',\n  '}'\n].join('\\n');\n\nconst userPrompt = [\n  `Название проекта: ${projectTitle}`,\n  '',\n  'Текст запроса/стенограммы:',\n  sourceText,\n  '',\n  deptList ? `Подразделения:\\n${deptList}` : 'Подразделения не переданы.'\n].join('\\n');\n\nconst ollamaRequest = {\n  model,\n  think: false,\n  stream: false,\n  format: 'json',\n  keep_alive: '30m',\n  messages: [\n    { role: 'system', content: systemPrompt },\n    { role: 'user', content: userPrompt }\n  ],\n  options: {\n    temperature: 0,\n    top_p: 0.9,\n    num_predict: 2400,\n    num_ctx: 8192,\n    repeat_penalty: 1.1\n  }\n};\n\nreturn [{\n  json: {\n    projectTitle,\n    sourceText,\n    departments,\n    model,\n    ollamaRequest\n  }\n}];"
+      },
+      "id": "d50e3888-c1f9-4209-8102-6cecd9db5fec",
+      "name": "Prepare Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -620,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://10.255.243.25:11434/api/chat",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.ollamaRequest}}",
+        "options": {
+          "timeout": 480000
+        }
+      },
+      "id": "a83cc8af-42f7-481d-a574-bab2713dc6d2",
+      "name": "Call Ollama Chat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const rawItem = items?.[0]?.json ?? {};\nconst rawText = (rawItem?.message?.content || rawItem?.response || '').toString().trim();\nconst doneReason = (rawItem?.done_reason || '').toString();\n\nif (!rawText) {\n  throw new Error('Модель вернула пустой ответ (message.content пустой)');\n}\n\nconst stripMarkdownFences = (text) => {\n  let t = text.trim();\n  if (t.startsWith('```')) {\n    t = t.replace(/^```json\\s*/i, '').replace(/^```\\s*/i, '').replace(/\\s*```$/, '').trim();\n  }\n  return t;\n};\n\nconst extractFirstJsonObject = (text) => {\n  const s = text;\n  let start = -1;\n  let depth = 0;\n  let inString = false;\n  let escaped = false;\n\n  for (let i = 0; i < s.length; i += 1) {\n    const ch = s[i];\n\n    if (inString) {\n      if (escaped) escaped = false;\n      else if (ch === '\\\\') escaped = true;\n      else if (ch === '\"') inString = false;\n      continue;\n    }\n\n    if (ch === '\"') {\n      inString = true;\n      continue;\n    }\n\n    if (ch === '{') {\n      if (start === -1) start = i;\n      depth += 1;\n      continue;\n    }\n\n    if (ch === '}') {\n      if (start !== -1) {\n        depth -= 1;\n        if (depth === 0) return s.slice(start, i + 1);\n      }\n    }\n  }\n\n  return null;\n};\n\nconst removeTrailingCommas = (text) => text.replace(/,\\s*([}\\]])/g, '$1');\nconst clean = stripMarkdownFences(rawText);\nconst extracted = extractFirstJsonObject(clean);\n\nconst candidates = [];\nconst addCandidate = (v) => {\n  if (typeof v !== 'string') return;\n  const t = v.trim();\n  if (t && !candidates.includes(t)) candidates.push(t);\n};\n\naddCandidate(clean);\naddCandidate(extracted);\naddCandidate(removeTrailingCommas(clean));\nif (extracted) addCandidate(removeTrailingCommas(extracted));\n\nlet parsed = null;\nlet lastError = '';\nfor (const c of candidates) {\n  try {\n    parsed = JSON.parse(c);\n    break;\n  } catch (e) {\n    lastError = String(e?.message || e);\n  }\n}\n\nconst normalizePriority = (value) => {\n  const v = (value || '').toString().toLowerCase();\n  if (v === 'high' || v === 'medium' || v === 'low') return v;\n  return 'medium';\n};\n\nif (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {\n  if (doneReason === 'length') {\n    const summaryMatch = clean.match(/\"summary\"\\s*:\\s*\"([\\s\\S]{0,700}?)(?<!\\\\)\"/);\n    const partialSummary = summaryMatch\n      ? summaryMatch[1]\n      : 'Ответ модели был обрезан по лимиту токенов. Сократите входной текст или увеличьте лимиты генерации.';\n\n    return [{\n      json: {\n        summary: partialSummary,\n        tasks: [],\n        departmentSuggestions: [],\n        _meta: {\n          truncated: true,\n          doneReason,\n          parseError: lastError,\n          rawPreview: rawText.slice(0, 1000)\n        }\n      }\n    }];\n  }\n\n  throw new Error(`Не удалось распарсить JSON от модели: ${lastError}. Превью ответа: ${rawText.slice(0, 1000)}`);\n}\n\nconst summary = typeof parsed.summary === 'string'\n  ? parsed.summary\n  : 'Недостаточно данных для краткого описания';\n\nconst tasks = Array.isArray(parsed.tasks)\n  ? parsed.tasks.map((t) => ({\n      title: (t?.title || 'Без названия').toString(),\n      description: (t?.description || 'Описание не предоставлено').toString(),\n      priority: normalizePriority(t?.priority)\n    }))\n  : [];\n\nconst departmentSuggestions = Array.isArray(parsed.departmentSuggestions)\n  ? parsed.departmentSuggestions.map((d) => ({\n      departmentCode: (d?.departmentCode || '').toString(),\n      relevanceReason: (d?.relevanceReason || 'Релевантность не указана').toString(),\n      problemFragment: (d?.problemFragment || 'Фрагмент не указан').toString(),\n      adaptedPitch: (d?.adaptedPitch || 'Пояснение не сформировано').toString(),\n      emailSubject: (d?.emailSubject || 'Предложение по проекту').toString(),\n      emailBody: (d?.emailBody || 'Текст письма не сформирован').toString()\n    }))\n  : [];\n\nreturn [{\n  json: {\n    summary,\n    tasks,\n    departmentSuggestions,\n    _meta: {\n      truncated: false,\n      doneReason,\n      model: rawItem.model || null,\n      promptEvalCount: rawItem.prompt_eval_count || null,\n      evalCount: rawItem.eval_count || null\n    }\n  }\n}];"
+      },
+      "id": "fb9db8df-9cb0-42e0-a3a5-69676a6e3beb",
+      "name": "Parse LLM JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -60,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{$json}}",
+        "options": {}
+      },
+      "id": "c391773b-44b9-4879-b722-4880ca3ad8d9",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        220,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook LLM Analyze": {
+      "main": [
+        [
+          {
+            "node": "Prepare Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Input": {
+      "main": [
+        [
+          {
+            "node": "Call Ollama Chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Ollama Chat": {
+      "main": [
+        [
+          {
+            "node": "Parse LLM JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse LLM JSON": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "versionId": "7f4c2db8-28c0-4f03-91e2-af7604a5fa10",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "id": "projectoria-llm-analyze-main-qwen",
+  "tags": []
+}
