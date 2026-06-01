@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { apiRequest } from '@/lib/api';
+import { USER_STATUS_LABELS } from '@/lib/status';
 
 interface UserItem {
   id: string;
@@ -204,8 +205,8 @@ export default function AdminUsersPage() {
                               )
                             }
                           >
-                            <option value="ACTIVE">ACTIVE</option>
-                            <option value="DISABLED">DISABLED</option>
+                            <option value="ACTIVE">{USER_STATUS_LABELS.ACTIVE}</option>
+                            <option value="DISABLED">{USER_STATUS_LABELS.DISABLED}</option>
                           </select>
                         </td>
                         <td>

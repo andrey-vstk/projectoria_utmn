@@ -28,3 +28,8 @@ export const MAILING_STATUS_LABELS: Record<string, string> = {
   FAILED: 'Ошибка',
   SKIPPED: 'Пропущено',
 };
+
+export const USER_STATUS_LABELS: Record<string, string> = {
+  ACTIVE: 'Активен',
+  DISABLED: 'Отключен',
+};
