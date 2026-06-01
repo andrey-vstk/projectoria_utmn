@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
+import { cn } from '@/lib/cn';
 import { AdminOnly } from '@/components/admin-only';
 import { ProtectedPage } from '@/components/protected-page';
 import { Button } from '@/components/ui/button';
@@ -18,10 +19,37 @@ interface Department {
   recipients: Array<{ email: string }>;
 }
 
+function normalizeRecipients(recipients: Array<{ email: string }>): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const recipient of recipients) {
+    const email = recipient.email.toLowerCase().trim();
+    if (!email || seen.has(email)) {
+      continue;
+    }
+    seen.add(email);
+    normalized.push(email);
+  }
+
+  return normalized;
+}
+
+function getDepartmentSignature(item: Department): string {
+  return JSON.stringify({
+    name: item.name.trim(),
+    description: (item.description ?? '').trim(),
+    isActive: item.isActive,
+    recipients: normalizeRecipients(item.recipients),
+  });
+}
+
 export default function AdminDepartmentsPage() {
   const [items, setItems] = useState<Department[]>([]);
+  const [initialSignatures, setInitialSignatures] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
 
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
@@ -37,6 +65,9 @@ export default function AdminDepartmentsPage() {
         withCsrf: false,
       });
       setItems(data);
+      setInitialSignatures(
+        Object.fromEntries(data.map((item) => [item.id, getDepartmentSignature(item)])),
+      );
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -50,9 +81,18 @@ export default function AdminDepartmentsPage() {
 
   const parseRecipients = (value: string): string[] =>
     value
-      .split(',')
+      .split(/[,\n;]+/g)
       .map((item) => item.trim())
       .filter(Boolean);
+
+  const isDepartmentDirty = (item: Department): boolean => {
+    const initialSignature = initialSignatures[item.id];
+    if (!initialSignature) {
+      return false;
+    }
+
+    return getDepartmentSignature(item) !== initialSignature;
+  };
 
   const createDepartment = async (event: FormEvent) => {
     event.preventDefault();
@@ -78,6 +118,11 @@ export default function AdminDepartmentsPage() {
   };
 
   const updateDepartment = async (department: Department) => {
+    if (!isDepartmentDirty(department)) {
+      return;
+    }
+
+    setSavingId(department.id);
     setError(null);
     try {
       await apiRequest(`/departments/${department.id}`, {
@@ -92,16 +137,8 @@ export default function AdminDepartmentsPage() {
       await load();
     } catch (e) {
       setError((e as Error).message);
-    }
-  };
-
-  const disableDepartment = async (id: string) => {
-    setError(null);
-    try {
-      await apiRequest(`/departments/${id}`, { method: 'DELETE', body: '{}' });
-      await load();
-    } catch (e) {
-      setError((e as Error).message);
+    } finally {
+      setSavingId(null);
     }
   };
 
@@ -166,21 +203,26 @@ export default function AdminDepartmentsPage() {
             {error ? <p className="message-danger">{error}</p> : null}
 
             {!loading ? (
-              <div className="table-wrap">
-                <table>
+              <div className="table-wrap departments-table-wrap">
+                <table className="departments-table">
                   <thead>
                     <tr>
-                      <th>Код</th>
+                      <th className="departments-col-code">Код</th>
                       <th>Название</th>
                       <th>Email</th>
-                      <th>Активно</th>
-                      <th />
+                      <th className="departments-col-active">Активно</th>
+                      <th className="departments-col-actions">Действия</th>
                     </tr>
                   </thead>
                   <tbody>
                     {items.map((item) => (
-                      <tr key={item.id}>
-                        <td>{item.code}</td>
+                      <tr
+                        key={item.id}
+                        className={cn(!item.isActive && 'departments-row-inactive')}
+                      >
+                        <td>
+                          <span className="departments-code-chip">{item.code}</span>
+                        </td>
                         <td>
                           <Input
                             value={item.name}
@@ -212,8 +254,8 @@ export default function AdminDepartmentsPage() {
                             }
                           />
                         </td>
-                        <td>
-                          <label className="check-label">
+                        <td className="departments-col-active">
+                          <label className="suggestion-toggle departments-toggle">
                             <input
                               type="checkbox"
                               checked={item.isActive}
@@ -225,16 +267,22 @@ export default function AdminDepartmentsPage() {
                                 )
                               }
                             />
-                            {item.isActive ? 'Да' : 'Нет'}
+                            <span className="suggestion-toggle-track">
+                              <span className="suggestion-toggle-thumb" />
+                            </span>
+                            <span className="suggestion-toggle-text">
+                              {item.isActive ? 'Активно' : 'Неактивно'}
+                            </span>
                           </label>
                         </td>
-                        <td>
-                          <div className="form-actions">
-                            <Button variant="secondary" onClick={() => void updateDepartment(item)}>
-                              Сохранить
-                            </Button>
-                            <Button variant="danger" onClick={() => void disableDepartment(item.id)}>
-                              Отключить
+                        <td className="departments-col-actions">
+                          <div className="form-actions departments-actions">
+                            <Button
+                              variant="secondary"
+                              disabled={!isDepartmentDirty(item) || savingId === item.id}
+                              onClick={() => void updateDepartment(item)}
+                            >
+                              {savingId === item.id ? 'Сохраняем...' : 'Сохранить'}
                             </Button>
                           </div>
                         </td>

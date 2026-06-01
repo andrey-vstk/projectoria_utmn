@@ -151,6 +151,7 @@ model DepartmentSuggestion {
   includeInMailing Boolean        @default(true)
   customSubject    String?
   customBody       String?
+  customRecipients Json?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 

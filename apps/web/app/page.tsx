@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ProjectStatusBadge } from '@/components/project-status-badge';
 import { ProtectedPage } from '@/components/protected-page';
 import { Button } from '@/components/ui/button';
@@ -9,13 +9,60 @@ import { Card } from '@/components/ui/card';
 import { apiRequest } from '@/lib/api';
 import { ProjectListItem } from '@/lib/types';
 
+const ACTIVE_PROJECT_STATUSES = new Set(['QUEUED', 'PROCESSING', 'SENDING']);
+
+function toTimestamp(value?: string | null): number | null {
+  if (!value) {
+    return null;
+  }
+
+  const ts = Date.parse(value);
+  return Number.isNaN(ts) ? null : ts;
+}
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours} ч ${String(minutes).padStart(2, '0')} мин ${String(seconds).padStart(2, '0')} сек`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes} мин ${String(seconds).padStart(2, '0')} сек`;
+  }
+
+  return `${seconds} сек`;
+}
+
+function getProcessingStart(project: ProjectListItem): number | null {
+  if (project.status === 'SENDING') {
+    return toTimestamp(project.sendingAt ?? project.updatedAt);
+  }
+
+  return toTimestamp(project.queuedAt ?? project.processingAt ?? project.updatedAt);
+}
+
+function getProgressCaption(status: string): string {
+  if (status === 'SENDING') {
+    return 'В отправке';
+  }
+
+  return 'В обработке';
+}
+
 export default function HomePage() {
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [statusNow, setStatusNow] = useState(() => Date.now());
 
-  const load = async () => {
-    setLoading(true);
+  const load = useCallback(async (options: { showLoader?: boolean } = {}) => {
+    if (options.showLoader) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const data = await apiRequest<ProjectListItem[]>('/projects', {
@@ -26,13 +73,48 @@ export default function HomePage() {
     } catch (e) {
       setError((e as Error).message);
     } finally {
-      setLoading(false);
+      if (options.showLoader) {
+        setLoading(false);
+      }
     }
-  };
+  }, []);
 
   useEffect(() => {
-    void load();
-  }, []);
+    void load({ showLoader: true });
+  }, [load]);
+
+  const hasActiveProjects = useMemo(
+    () => projects.some((project) => ACTIVE_PROJECT_STATUSES.has(project.status)),
+    [projects],
+  );
+
+  useEffect(() => {
+    if (!hasActiveProjects) {
+      return;
+    }
+
+    const ticker = window.setInterval(() => {
+      setStatusNow(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(ticker);
+    };
+  }, [hasActiveProjects]);
+
+  useEffect(() => {
+    if (!hasActiveProjects) {
+      return;
+    }
+
+    const poller = window.setInterval(() => {
+      void load();
+    }, 5000);
+
+    return () => {
+      window.clearInterval(poller);
+    };
+  }, [hasActiveProjects, load]);
 
   const stats = useMemo(() => {
     const total = projects.length;
@@ -106,7 +188,7 @@ export default function HomePage() {
                 <thead>
                   <tr>
                     <th>Проект</th>
-                    <th>Статус</th>
+                    <th className="projects-status-col">Статус</th>
                     <th>Автор</th>
                     <th>Рассылки</th>
                     <th>Отклики</th>
@@ -114,28 +196,51 @@ export default function HomePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {projects.map((project) => (
-                    <tr key={project.id}>
-                      <td>
-                        <Link href={`/projects/${project.id}`} className="table-link">
-                          {project.title}
-                        </Link>
-                        {project.analysis?.summary ? (
-                          <p className="muted" style={{ margin: '6px 0 0' }}>
-                            {project.analysis.summary.slice(0, 135)}
-                            {project.analysis.summary.length > 135 ? '...' : ''}
-                          </p>
-                        ) : null}
-                      </td>
-                      <td>
-                        <ProjectStatusBadge status={project.status} />
-                      </td>
-                      <td>{project.author.fullName}</td>
-                      <td>{project._count.mailings}</td>
-                      <td>{project._count.responses}</td>
-                      <td>{new Date(project.createdAt).toLocaleString('ru-RU')}</td>
-                    </tr>
-                  ))}
+                  {projects.map((project) => {
+                    const isActive = ACTIVE_PROJECT_STATUSES.has(project.status);
+                    const startedAt = getProcessingStart(project);
+                    const elapsedLabel =
+                      startedAt && startedAt <= statusNow
+                        ? formatDuration(statusNow - startedAt)
+                        : '...';
+                    const progressCaption = getProgressCaption(project.status);
+
+                    return (
+                      <tr key={project.id}>
+                        <td>
+                          <Link href={`/projects/${project.id}`} className="table-link">
+                            {project.title}
+                          </Link>
+                          {project.analysis?.summary ? (
+                            <p className="muted" style={{ margin: '6px 0 0' }}>
+                              {project.analysis.summary.slice(0, 135)}
+                              {project.analysis.summary.length > 135 ? '...' : ''}
+                            </p>
+                          ) : null}
+                        </td>
+                        <td className="projects-status-col">
+                          <div className="project-status-cell">
+                            <ProjectStatusBadge
+                              status={project.status}
+                              className="project-status-badge-fixed"
+                            />
+                            {isActive ? (
+                              <div className="project-status-meta">
+                                <span className="project-status-spinner" aria-hidden />
+                                <span className="project-status-time">
+                                  {progressCaption}: {elapsedLabel}
+                                </span>
+                              </div>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td>{project.author.fullName}</td>
+                        <td>{project._count.mailings}</td>
+                        <td>{project._count.responses}</td>
+                        <td>{new Date(project.createdAt).toLocaleString('ru-RU')}</td>
+                      </tr>
+                    );
+                  })}
                   {projects.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="muted">

@@ -2,6 +2,7 @@ import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
+  IsEmail,
   IsOptional,
   IsString,
   IsUUID,
@@ -24,6 +25,11 @@ export class SuggestionPatchDto {
   @IsOptional()
   @IsString()
   customBody?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsEmail({}, { each: true })
+  recipients?: string[];
 }
 
 export class UpdateSuggestionsDto {

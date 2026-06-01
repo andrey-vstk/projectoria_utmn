@@ -75,7 +75,10 @@ export class MailingsService {
 
     let created = 0;
     for (const suggestion of selected) {
-      const recipients = suggestion.department.recipients.map((r) => r.email);
+      const recipients = this.pickRecipientsForMailing(
+        suggestion.customRecipients,
+        suggestion.department.recipients.map((r) => r.email),
+      );
       if (recipients.length === 0) {
         continue;
       }
@@ -233,5 +236,35 @@ export class MailingsService {
         },
       });
     }
+  }
+
+  private pickRecipientsForMailing(
+    customRecipients: unknown,
+    departmentRecipients: string[],
+  ): string[] {
+    if (!Array.isArray(customRecipients)) {
+      return this.normalizeRecipients(departmentRecipients);
+    }
+
+    return this.normalizeRecipients(
+      customRecipients.filter((value): value is string => typeof value === 'string'),
+    );
+  }
+
+  private normalizeRecipients(recipients: string[]): string[] {
+    const seen = new Set<string>();
+    const normalized: string[] = [];
+
+    for (const raw of recipients) {
+      const email = raw.toLowerCase().trim();
+      if (!email || seen.has(email)) {
+        continue;
+      }
+
+      seen.add(email);
+      normalized.push(email);
+    }
+
+    return normalized;
   }
 }

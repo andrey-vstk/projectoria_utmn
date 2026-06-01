@@ -190,12 +190,21 @@ export class ProjectsService {
           continue;
         }
 
+        const normalizedRecipients =
+          patch.recipients === undefined
+            ? undefined
+            : this.normalizeRecipients(patch.recipients);
+
         await tx.departmentSuggestion.update({
           where: { id: patch.id },
           data: {
             includeInMailing: patch.includeInMailing,
             customSubject: patch.customSubject,
             customBody: patch.customBody,
+            customRecipients:
+              patch.recipients === undefined
+                ? undefined
+                : (normalizedRecipients as unknown as Prisma.InputJsonValue),
           },
         });
       }
@@ -263,5 +272,22 @@ export class ProjectsService {
     if (currentUser.sub !== authorId) {
       throw new ForbiddenException('Нет доступа к проекту');
     }
+  }
+
+  private normalizeRecipients(recipients: string[]): string[] {
+    const seen = new Set<string>();
+    const normalized: string[] = [];
+
+    for (const raw of recipients) {
+      const email = raw.toLowerCase().trim();
+      if (!email || seen.has(email)) {
+        continue;
+      }
+
+      seen.add(email);
+      normalized.push(email);
+    }
+
+    return normalized;
   }
 }

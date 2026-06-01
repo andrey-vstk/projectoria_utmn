@@ -8,6 +8,9 @@ export interface ProjectListItem {
   id: string;
   title: string;
   status: string;
+  queuedAt?: string | null;
+  processingAt?: string | null;
+  sendingAt?: string | null;
   createdAt: string;
   updatedAt: string;
   author: UserShort;
@@ -39,6 +42,7 @@ export interface ProjectSuggestion {
   includeInMailing: boolean;
   customSubject?: string | null;
   customBody?: string | null;
+  customRecipients?: string[] | null;
   department: {
     id: string;
     code: string;
@@ -52,6 +56,10 @@ export interface ProjectDetail {
   title: string;
   sourceText: string;
   status: string;
+  queuedAt?: string | null;
+  processingAt?: string | null;
+  readyAt?: string | null;
+  failedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   author: UserShort;
