@@ -163,13 +163,15 @@ export class MailingsService {
     try {
       const publicBaseUrl =
         this.configService.get<string>('publicBaseUrl') ?? 'http://localhost:3000';
-      const responseUrl = `${publicBaseUrl}/respond/${mailing.responseToken}`;
+      const responseUrl = `${publicBaseUrl}/respond/${mailing.responseToken}?decision=ACCEPTED`;
+      const declineResponseUrl = `${publicBaseUrl}/respond/${mailing.responseToken}?decision=DECLINED`;
 
       await this.mailService.sendDepartmentMail({
         recipients: mailing.recipients as string[],
         subject: mailing.subject,
         body: mailing.body,
         responseUrl,
+        declineResponseUrl,
         projectTitle: mailing.project.title,
       });
 

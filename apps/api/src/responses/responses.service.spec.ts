@@ -1,3 +1,4 @@
+import { ResponseDecision } from '@prisma/client';
 import { ResponsesService } from './responses.service';
 
 describe('ResponsesService', () => {
@@ -65,6 +66,7 @@ describe('ResponsesService', () => {
     const result = await service.submitByToken(
       'token',
       {
+        decision: ResponseDecision.ACCEPTED,
         responderEmail: 'team@utmn.local',
         responderName: 'Иван Иванов',
       },

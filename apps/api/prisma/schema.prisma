@@ -49,6 +49,11 @@ enum NotificationType {
   SYSTEM
 }
 
+enum ResponseDecision {
+  ACCEPTED
+  DECLINED
+}
+
 model User {
   id           String         @id @default(uuid())
   email        String         @unique
@@ -192,6 +197,7 @@ model Response {
   mailing        Mailing     @relation(fields: [mailingId], references: [id], onDelete: Cascade)
   responderEmail String?
   responderName  String?
+  decision       ResponseDecision @default(ACCEPTED)
   ipAddress      String?
   userAgent      String?
   tokenSnapshot  String

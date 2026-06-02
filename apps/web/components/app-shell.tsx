@@ -12,7 +12,11 @@ import { Button } from './ui/button';
 
 interface Notification {
   id: string;
+  projectId?: string | null;
+  title: string;
+  message: string;
   isRead: boolean;
+  createdAt: string;
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -36,6 +40,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     () => notifications.filter((item) => !item.isRead).length,
     [notifications],
   );
+
+  const markNotificationRead = async (notificationId: string) => {
+    setNotifications((items) =>
+      items.map((item) => (item.id === notificationId ? { ...item, isRead: true } : item)),
+    );
+
+    try {
+      await apiRequest(`/notifications/${notificationId}/read`, { method: 'PATCH' });
+    } catch {
+      setNotifications((items) =>
+        items.map((item) => (item.id === notificationId ? { ...item, isRead: false } : item)),
+      );
+    }
+  };
 
   const items = [
     { href: '/', label: 'Проекты' },
@@ -75,7 +93,50 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
             {user ? (
               <div className="header-meta">
-                <Badge tone="info">Уведомления: {unreadCount}</Badge>
+                <div className="notification-menu">
+                  <button type="button" className="notification-trigger">
+                    <span>Уведомления</span>
+                    <Badge tone={unreadCount > 0 ? 'info' : 'neutral'}>{unreadCount}</Badge>
+                  </button>
+                  <div className="notification-panel">
+                    <div className="notification-panel-head">
+                      <strong>Уведомления</strong>
+                      <span>Непрочитанных: {unreadCount}</span>
+                    </div>
+                    <div className="notification-list">
+                      {notifications.length > 0 ? (
+                        notifications.slice(0, 8).map((notification) => (
+                          <Link
+                            key={notification.id}
+                            href={
+                              notification.projectId
+                                ? `/projects/${notification.projectId}`
+                                : '/'
+                            }
+                            className={cn(
+                              'notification-item',
+                              !notification.isRead && 'notification-item-unread',
+                            )}
+                            onClick={() => void markNotificationRead(notification.id)}
+                          >
+                            <span className="notification-item-title">
+                              {!notification.isRead ? (
+                                <span className="notification-unread-dot" />
+                              ) : null}
+                              {notification.title}
+                            </span>
+                            <span className="notification-item-message">
+                              {notification.message}
+                            </span>
+                            <time>{new Date(notification.createdAt).toLocaleString('ru-RU')}</time>
+                          </Link>
+                        ))
+                      ) : (
+                        <p className="notification-empty">Новых уведомлений нет.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
                 <span className="user-chip">
                   {user.fullName} ({user.role === 'ADMIN' ? 'Администратор' : 'Инициатор'})
                 </span>

@@ -10,7 +10,11 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { apiRequest } from '@/lib/api';
-import { MAILING_STATUS_LABELS, PROJECT_STATUS_LABELS } from '@/lib/status';
+import {
+  MAILING_STATUS_LABELS,
+  PROJECT_STATUS_LABELS,
+  RESPONSE_DECISION_LABELS,
+} from '@/lib/status';
 import { cn } from '@/lib/cn';
 import { ProjectDetail, ProjectSuggestion } from '@/lib/types';
 
@@ -792,7 +796,7 @@ export default function ProjectDetailPage() {
                 <div>
                   <h3 className="section-title">Рассылка и отклики</h3>
                   <p className="section-subtitle">
-                    Статусы отправки писем и факт отклика по уникальной ссылке.
+                    Статусы отправки писем и решения подразделений по участию.
                   </p>
                 </div>
                 <Link href={`/projects/${project.id}/responses`}>
@@ -806,7 +810,7 @@ export default function ProjectDetailPage() {
                     <tr>
                       <th>Подразделение</th>
                       <th>Статус письма</th>
-                      <th>Отклик</th>
+                      <th>Решение</th>
                       <th>Отправлено</th>
                     </tr>
                   </thead>
@@ -817,7 +821,22 @@ export default function ProjectDetailPage() {
                           {mailing.department.code} — {mailing.department.name}
                         </td>
                         <td>{MAILING_STATUS_LABELS[mailing.status] ?? mailing.status}</td>
-                        <td>{mailing.response ? 'Да' : '—'}</td>
+                        <td>
+                          <Badge
+                            tone={
+                              !mailing.response
+                                ? 'neutral'
+                                : mailing.response.decision === 'ACCEPTED'
+                                  ? 'success'
+                                  : 'danger'
+                            }
+                          >
+                            {mailing.response
+                              ? (RESPONSE_DECISION_LABELS[mailing.response.decision] ??
+                                mailing.response.decision)
+                              : 'Ожидается ответ'}
+                          </Badge>
+                        </td>
                         <td>
                           {mailing.sentAt
                             ? new Date(mailing.sentAt).toLocaleString('ru-RU')

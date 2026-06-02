@@ -11,9 +11,13 @@ interface StatusPayload {
   valid: boolean;
   tokenUsed: boolean;
   alreadyResponded: boolean;
-  project: { id: string; title: string };
+  decision?: ResponseDecision | null;
+  project: { id: string; title: string; summary: string };
+  proposedTask: string;
   department: { id: string; code: string; name: string };
 }
+
+type ResponseDecision = 'ACCEPTED' | 'DECLINED';
 
 export default function PublicResponsePage() {
   const params = useParams<{ token: string }>();
@@ -21,10 +25,23 @@ export default function PublicResponsePage() {
   const [status, setStatus] = useState<StatusPayload | null>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [decision, setDecision] = useState<ResponseDecision>('ACCEPTED');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const requestedDecision = searchParams.get('decision');
+    const responderEmail = searchParams.get('responderEmail');
+    if (requestedDecision === 'ACCEPTED' || requestedDecision === 'DECLINED') {
+      setDecision(requestedDecision);
+    }
+    if (responderEmail) {
+      setEmail(responderEmail);
+    }
+  }, []);
 
   useEffect(() => {
     apiRequest<StatusPayload>(`/public/responses/${token}/status`, {
@@ -46,11 +63,17 @@ export default function PublicResponsePage() {
         method: 'POST',
         withCsrf: false,
         body: JSON.stringify({
+          decision,
           responderName: name || undefined,
           responderEmail: email || undefined,
         }),
       });
-      setMessage('Спасибо, ваш отклик зафиксирован.');
+      setStatus((prev) => (prev ? { ...prev, tokenUsed: true, decision } : prev));
+      setMessage(
+        decision === 'ACCEPTED'
+          ? 'Участие в проекте подтверждено.'
+          : 'Отказ от участия зафиксирован.',
+      );
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -62,9 +85,6 @@ export default function PublicResponsePage() {
     <div className="auth-page">
       <Card className="auth-card">
         <h1 className="auth-title">Отклик на проект</h1>
-        <p className="auth-subtitle">
-          Подтвердите заинтересованность подразделения и оставьте контактные данные.
-        </p>
 
         {loading ? <p className="muted">Проверяем ссылку...</p> : null}
         {error ? <p className="message-danger">{error}</p> : null}
@@ -80,16 +100,77 @@ export default function PublicResponsePage() {
               </p>
             </Card>
 
+            <details className="response-project-details">
+              <summary>Подробнее о проекте и задаче</summary>
+              <div className="response-project-details-content">
+                <section>
+                  <h2>Сводка по проекту</h2>
+                  <p>{status.project.summary || 'Сводка не указана.'}</p>
+                </section>
+                <section>
+                  <h2>Предлагаемая задача</h2>
+                  <p>{status.proposedTask || 'Описание задачи не указано.'}</p>
+                </section>
+              </div>
+            </details>
+
             {status.tokenUsed ? (
-              <p className="notice">Ссылка уже была использована. Спасибо за отклик.</p>
+              <p className="notice">
+                Решение уже зафиксировано:{' '}
+                <b>
+                  {status.decision === 'DECLINED'
+                    ? 'участие отклонено'
+                    : 'участие подтверждено'}
+                </b>
+                .
+              </p>
             ) : (
               <form onSubmit={onSubmit} className="stack-sm">
+                <div className="field">
+                  <label className="label">Решение подразделения</label>
+                  <div className="response-decision-grid">
+                    <label
+                      className={`response-decision-option ${
+                        decision === 'ACCEPTED' ? 'response-decision-option-active' : ''
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="decision"
+                        value="ACCEPTED"
+                        checked={decision === 'ACCEPTED'}
+                        onChange={() => setDecision('ACCEPTED')}
+                      />
+                      <span className="response-decision-title">Подтвердить участие</span>
+                      <span className="response-decision-description">
+                        Подразделение готово подключиться к проекту.
+                      </span>
+                    </label>
+                    <label
+                      className={`response-decision-option response-decision-option-decline ${
+                        decision === 'DECLINED' ? 'response-decision-option-active' : ''
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="decision"
+                        value="DECLINED"
+                        checked={decision === 'DECLINED'}
+                        onChange={() => setDecision('DECLINED')}
+                      />
+                      <span className="response-decision-title">Отказаться от участия</span>
+                      <span className="response-decision-description">
+                        Подразделение не будет участвовать в проекте.
+                      </span>
+                    </label>
+                  </div>
+                </div>
                 <div className="field">
                   <label className="label">Имя (опционально)</label>
                   <Input value={name} onChange={(e) => setName(e.target.value)} />
                 </div>
                 <div className="field">
-                  <label className="label">Email (опционально)</label>
+                  <label className="label">Email</label>
                   <Input
                     type="email"
                     value={email}
@@ -97,8 +178,16 @@ export default function PublicResponsePage() {
                     placeholder="name@utmn.ru"
                   />
                 </div>
-                <Button type="submit" disabled={submitting}>
-                  {submitting ? 'Сохраняем...' : 'Хочу вступить в проект'}
+                <Button
+                  type="submit"
+                  variant={decision === 'DECLINED' ? 'danger' : 'primary'}
+                  disabled={submitting}
+                >
+                  {submitting
+                    ? 'Сохраняем...'
+                    : decision === 'ACCEPTED'
+                      ? 'Подтвердить участие'
+                      : 'Подтвердить отказ'}
                 </Button>
               </form>
             )}

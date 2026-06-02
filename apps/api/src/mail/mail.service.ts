@@ -8,6 +8,7 @@ interface SendDepartmentMailInput {
   subject: string;
   body: string;
   responseUrl: string;
+  declineResponseUrl: string;
   projectTitle: string;
 }
 
@@ -54,25 +55,23 @@ export class MailService implements OnModuleInit {
     return this.escapeHtml(body).replace(/\n/g, '<br/>');
   }
 
-  async sendDepartmentMail(input: SendDepartmentMailInput): Promise<void> {
-    const payload = {
-      to: input.recipients,
-      subject: input.subject,
-      body: input.body,
-      responseUrl: input.responseUrl,
-      projectTitle: input.projectTitle,
-    };
+  private addResponderEmail(url: string, recipient: string): string {
+    const personalizedUrl = new URL(url);
+    personalizedUrl.searchParams.set('responderEmail', recipient);
+    return personalizedUrl.toString();
+  }
 
-    const sentViaN8n = await this.n8nService.sendEmailViaWorkflow(payload);
-    if (sentViaN8n) {
-      return;
-    }
-
+  private buildDepartmentMailHtml(
+    input: SendDepartmentMailInput,
+    responseUrl: string,
+    declineResponseUrl: string,
+  ): string {
     const safeProjectTitle = this.escapeHtml(input.projectTitle);
     const safeBody = this.formatBodyForHtml(input.body);
-    const safeResponseUrl = this.escapeHtml(input.responseUrl);
+    const safeResponseUrl = this.escapeHtml(responseUrl);
+    const safeDeclineResponseUrl = this.escapeHtml(declineResponseUrl);
 
-    const html = `
+    return `
       <div style="font-family:Arial,sans-serif;line-height:1.6;color:#1f2937;max-width:760px;margin:0 auto;padding:20px;background:#f8fbfe;border:1px solid #d8e7f2;border-radius:14px">
         <p style="margin:0 0 10px;font-size:12px;color:#4b647a;letter-spacing:0.04em;text-transform:uppercase">Платформа «Проектория» · Тюменский государственный университет</p>
         <h2 style="margin:0 0 14px;font-size:24px;color:#102536">${safeProjectTitle}</h2>
@@ -83,23 +82,25 @@ export class MailService implements OnModuleInit {
           <p style="margin:0;white-space:pre-line">${safeBody}</p>
         </div>
 
-        <p style="margin:0 0 12px">Если ваше подразделение готово подключиться к проекту, подтвердите интерес по кнопке ниже.</p>
-        <p style="margin:0 0 16px">
+        <p style="margin:0 0 12px">Пожалуйста, сообщите решение подразделения по участию в проекте.</p>
+        <p style="margin:0 0 16px;display:flex;gap:10px;flex-wrap:wrap">
           <a href="${safeResponseUrl}" style="background:#00AEEF;color:#ffffff;padding:12px 16px;text-decoration:none;border-radius:8px;display:inline-block;font-weight:700">
-            Хочу вступить в проект
+            Подтвердить участие
+          </a>
+          <a href="${safeDeclineResponseUrl}" style="background:#fff1f1;color:#991b1b;border:1px solid #fecaca;padding:11px 15px;text-decoration:none;border-radius:8px;display:inline-block;font-weight:700">
+            Отказаться от участия
           </a>
         </p>
-
-        <p style="margin:0 0 6px;font-size:13px;color:#4b647a">Если кнопка не работает, используйте ссылку:</p>
-        <p style="margin:0 0 16px;font-size:13px;word-break:break-all">
-          <a href="${safeResponseUrl}" style="color:#0b78a3">${safeResponseUrl}</a>
-        </p>
-
-        <p style="margin:0;font-size:12px;color:#5e778c">Письмо сформировано автоматически в рамках пилотного MVP «Проектория» для ТюмГУ.</p>
       </div>
     `;
+  }
 
-    const text = [
+  private buildDepartmentMailText(
+    input: SendDepartmentMailInput,
+    responseUrl: string,
+    declineResponseUrl: string,
+  ): string {
+    return [
       'Платформа «Проектория» · Тюменский государственный университет',
       '',
       `Проект: ${input.projectTitle}`,
@@ -111,18 +112,43 @@ export class MailService implements OnModuleInit {
       input.body,
       '',
       'Для подтверждения участия перейдите по ссылке:',
-      input.responseUrl,
+      responseUrl,
       '',
-      'Письмо сформировано автоматически в рамках пилотного MVP «Проектория» для ТюмГУ.',
+      'Для отказа от участия перейдите по ссылке:',
+      declineResponseUrl,
     ].join('\n');
+  }
 
-    await this.transporter.sendMail({
-      from: this.configService.get<string>('smtp.from'),
-      to: input.recipients.join(','),
-      subject: input.subject,
-      text,
-      html,
-    });
+  async sendDepartmentMail(input: SendDepartmentMailInput): Promise<void> {
+    for (const recipient of input.recipients) {
+      const responseUrl = this.addResponderEmail(input.responseUrl, recipient);
+      const declineResponseUrl = this.addResponderEmail(
+        input.declineResponseUrl,
+        recipient,
+      );
+      const payload = {
+        to: [recipient],
+        subject: input.subject,
+        body: input.body,
+        responseUrl,
+        acceptResponseUrl: responseUrl,
+        declineResponseUrl,
+        projectTitle: input.projectTitle,
+      };
+
+      const sentViaN8n = await this.n8nService.sendEmailViaWorkflow(payload);
+      if (sentViaN8n) {
+        continue;
+      }
+
+      await this.transporter.sendMail({
+        from: this.configService.get<string>('smtp.from'),
+        to: recipient,
+        subject: input.subject,
+        text: this.buildDepartmentMailText(input, responseUrl, declineResponseUrl),
+        html: this.buildDepartmentMailHtml(input, responseUrl, declineResponseUrl),
+      });
+    }
   }
 
   async sendNotification(input: SendNotificationInput): Promise<void> {

@@ -29,6 +29,11 @@ export const MAILING_STATUS_LABELS: Record<string, string> = {
   SKIPPED: 'Пропущено',
 };
 
+export const RESPONSE_DECISION_LABELS: Record<string, string> = {
+  ACCEPTED: 'Участие подтверждено',
+  DECLINED: 'Участие отклонено',
+};
+
 export const USER_STATUS_LABELS: Record<string, string> = {
   ACTIVE: 'Активен',
   DISABLED: 'Отключен',

@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { NotificationType } from '@prisma/client';
+import { NotificationType, ResponseDecision } from '@prisma/client';
 import { MailService } from '../mail/mail.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -25,6 +25,11 @@ export class ResponsesService {
           select: {
             id: true,
             title: true,
+            analysis: {
+              select: {
+                summary: true,
+              },
+            },
           },
         },
         department: {
@@ -46,7 +51,13 @@ export class ResponsesService {
       valid: true,
       tokenUsed: mailing.tokenUsed,
       alreadyResponded: Boolean(mailing.response),
-      project: mailing.project,
+      decision: mailing.response?.decision ?? null,
+      project: {
+        id: mailing.project.id,
+        title: mailing.project.title,
+        summary: mailing.project.analysis?.summary ?? '',
+      },
+      proposedTask: mailing.body,
       department: mailing.department,
     };
   }
@@ -98,6 +109,7 @@ export class ResponsesService {
           mailingId: mailing.id,
           responderEmail: dto.responderEmail?.toLowerCase().trim(),
           responderName: dto.responderName?.trim(),
+          decision: dto.decision,
           ipAddress: meta.ipAddress,
           userAgent: meta.userAgent,
           tokenSnapshot: token,
@@ -116,18 +128,19 @@ export class ResponsesService {
       userId: mailing.project.authorId,
       projectId: mailing.projectId,
       type: NotificationType.RESPONSE_RECEIVED,
-      title: 'Новый отклик по проекту',
-      message: `Отклик от ${mailing.department.name}${
+      title: 'Получено решение по проекту',
+      message: `${this.getDecisionLabel(dto.decision)}: ${mailing.department.name}${
         dto.responderEmail ? ` (${dto.responderEmail})` : ''
       }`,
     });
 
     await this.mailService.sendNotification({
       to: mailing.project.author.email,
-      subject: `Новый отклик по проекту "${mailing.project.title}"`,
+      subject: `Получено решение по проекту "${mailing.project.title}"`,
       text: [
-        `По проекту "${mailing.project.title}" получен отклик.`,
+        `По проекту "${mailing.project.title}" получено решение.`,
         `Подразделение: ${mailing.department.name} (${mailing.department.code})`,
+        `Решение: ${this.getDecisionLabel(dto.decision)}`,
         dto.responderName ? `Имя: ${dto.responderName}` : '',
         dto.responderEmail ? `Email: ${dto.responderEmail}` : '',
       ]
@@ -140,5 +153,11 @@ export class ResponsesService {
       alreadyResponded: false,
       responseId: response.id,
     };
+  }
+
+  private getDecisionLabel(decision: ResponseDecision): string {
+    return decision === ResponseDecision.ACCEPTED
+      ? 'Участие подтверждено'
+      : 'Участие отклонено';
   }
 }

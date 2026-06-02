@@ -77,12 +77,13 @@ export interface ProjectDetail {
     status: string;
     sentAt?: string | null;
     department: { id: string; code: string; name: string };
-    response?: { id: string } | null;
+    response?: { id: string; decision: string } | null;
   }>;
   responses: Array<{
     id: string;
     responderEmail?: string | null;
     responderName?: string | null;
+    decision: string;
     respondedAt: string;
     department: { id: string; code: string; name: string };
   }>;
