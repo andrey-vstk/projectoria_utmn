@@ -174,6 +174,44 @@ p {
   gap: var(--space-2);
 }
 
+.sidebar-create-project {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  margin-bottom: var(--space-4);
+  border: 1px solid rgba(0, 129, 180, 0.72);
+  border-radius: 13px;
+  padding: 11px 15px;
+  color: #ffffff;
+  background:
+    radial-gradient(circle at 84% 15%, rgba(255, 255, 255, 0.3), transparent 30%),
+    linear-gradient(135deg, #19b9f0 0%, #0099d3 58%, #0083b8 100%);
+  box-shadow:
+    0 10px 20px rgba(0, 145, 202, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  font-size: 15px;
+  font-weight: 750;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.sidebar-create-project:hover,
+.sidebar-create-project-active {
+  border-color: #007aa8;
+  background:
+    radial-gradient(circle at 84% 15%, rgba(255, 255, 255, 0.38), transparent 32%),
+    linear-gradient(135deg, #11b5ed 0%, #008fc6 58%, #0076a6 100%);
+  box-shadow:
+    0 13px 24px rgba(0, 133, 188, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34);
+  transform: translateY(-2px);
+}
+
 .sidebar-link {
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
@@ -1322,6 +1360,15 @@ td.projects-status-col {
     border-right: 0;
     border-bottom: 1px solid var(--border-default);
     padding: var(--space-3) var(--space-4);
+  }
+
+  .sidebar-create-project {
+    flex-shrink: 0;
+    margin: 0 var(--space-2) 0 0;
+  }
+
+  .sidebar-link {
+    flex-shrink: 0;
   }
 
   .app-content {

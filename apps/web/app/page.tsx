@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ProjectStatusBadge } from '@/components/project-status-badge';
 import { ProtectedPage } from '@/components/protected-page';
-import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiRequest } from '@/lib/api';
 import { ProjectListItem } from '@/lib/types';
@@ -143,9 +142,6 @@ export default function HomePage() {
               История запросов, анализов, рассылок и откликов индустриальных заказчиков.
             </p>
           </div>
-          <Link href="/projects/new">
-            <Button>Создать проект</Button>
-          </Link>
         </div>
 
         {!loading ? (

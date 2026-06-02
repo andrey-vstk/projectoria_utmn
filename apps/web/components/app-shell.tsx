@@ -39,7 +39,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const items = [
     { href: '/', label: 'Проекты' },
-    { href: '/projects/new', label: 'Новый проект' },
     { href: '/admin/users', label: 'Пользователи', adminOnly: true },
     { href: '/admin/departments', label: 'Подразделения', adminOnly: true },
     { href: '/admin/settings', label: 'Настройки', adminOnly: true },
@@ -105,6 +104,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         >
           {user ? (
             <aside className="app-sidebar">
+              <Link
+                href="/projects/new"
+                className={cn(
+                  'sidebar-create-project',
+                  isActiveLink('/projects/new') && 'sidebar-create-project-active',
+                )}
+              >
+                <span>Создать проект</span>
+              </Link>
               {visibleItems.map((item) => (
                 <Link
                   href={item.href}
