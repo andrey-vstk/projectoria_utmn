@@ -1,7 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateDepartmentDto } from './dto/create-department.dto';
+import { DepartmentRecipientDto } from './dto/department-recipient.dto';
 import { UpdateDepartmentDto } from './dto/update-department.dto';
 
 const DEPARTMENT_INCLUDE = {
@@ -36,10 +38,8 @@ export class DepartmentsService {
   }
 
   async create(dto: CreateDepartmentDto) {
-    const code = dto.code.trim();
-    const recipients = dto.recipients
-      .map((email) => email.toLowerCase().trim())
-      .filter(Boolean);
+    const code = dto.code?.trim() || (await this.generateCode());
+    const recipients = this.normalizeRecipients(dto.recipients);
 
     return this.prisma.department.create({
       data: {
@@ -48,7 +48,7 @@ export class DepartmentsService {
         description: dto.description?.trim(),
         recipients: {
           createMany: {
-            data: recipients.map((email) => ({ email })),
+            data: recipients,
           },
         },
       },
@@ -69,18 +69,15 @@ export class DepartmentsService {
           data: { isActive: false },
         });
 
-        for (const raw of dto.recipients) {
-          const email = raw.toLowerCase().trim();
-          if (!email) continue;
-
+        for (const recipient of this.normalizeRecipients(dto.recipients)) {
           const existing = await tx.departmentRecipient.findFirst({
-            where: { departmentId: id, email },
+            where: { departmentId: id, email: recipient.email },
           });
 
           if (existing) {
             await tx.departmentRecipient.update({
               where: { id: existing.id },
-              data: { isActive: true },
+              data: { isActive: true, displayName: recipient.displayName },
             });
             continue;
           }
@@ -88,7 +85,7 @@ export class DepartmentsService {
           await tx.departmentRecipient.create({
             data: {
               departmentId: id,
-              email,
+              ...recipient,
               isActive: true,
             },
           });
@@ -124,5 +121,33 @@ export class DepartmentsService {
         data: { isActive: false },
       });
     });
+  }
+
+  private normalizeRecipients(recipients: DepartmentRecipientDto[]) {
+    const normalized = new Map<string, { email: string; displayName: string | null }>();
+
+    for (const recipient of recipients) {
+      const email = recipient.email.toLowerCase().trim();
+      if (!email) {
+        continue;
+      }
+
+      normalized.set(email, {
+        email,
+        displayName: recipient.displayName?.trim() || null,
+      });
+    }
+
+    return [...normalized.values()];
+  }
+
+  private async generateCode(): Promise<string> {
+    for (;;) {
+      const code = `DEP-${randomBytes(3).toString('hex').toUpperCase()}`;
+      const existing = await this.prisma.department.findUnique({ where: { code } });
+      if (!existing) {
+        return code;
+      }
+    }
   }
 }

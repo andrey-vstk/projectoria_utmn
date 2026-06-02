@@ -81,7 +81,16 @@ export class ResponsesService {
             },
           },
         },
-        department: true,
+        department: {
+          include: {
+            recipients: {
+              select: {
+                email: true,
+                displayName: true,
+              },
+            },
+          },
+        },
         response: true,
       },
     });
@@ -101,14 +110,30 @@ export class ResponsesService {
       throw new BadRequestException('Ссылка уже была использована');
     }
 
+    const recipientEmails = this.normalizeRecipients(mailing.recipients);
+    const requestedEmail = dto.responderEmail?.toLowerCase().trim();
+    if (requestedEmail && !recipientEmails.includes(requestedEmail)) {
+      throw new BadRequestException('Адресат не соответствует персональной ссылке');
+    }
+
+    const responderEmail =
+      recipientEmails.length === 1 ? recipientEmails[0] : requestedEmail;
+    const knownRecipient = mailing.department.recipients.find(
+      (recipient) => recipient.email.toLowerCase().trim() === responderEmail,
+    );
+    const responderName =
+      knownRecipient?.displayName?.trim() ||
+      dto.responderName?.trim() ||
+      mailing.department.name;
+
     const response = await this.prisma.$transaction(async (tx) => {
       const created = await tx.response.create({
         data: {
           projectId: mailing.projectId,
           departmentId: mailing.departmentId,
           mailingId: mailing.id,
-          responderEmail: dto.responderEmail?.toLowerCase().trim(),
-          responderName: dto.responderName?.trim(),
+          responderEmail,
+          responderName,
           decision: dto.decision,
           ipAddress: meta.ipAddress,
           userAgent: meta.userAgent,
@@ -130,7 +155,7 @@ export class ResponsesService {
       type: NotificationType.RESPONSE_RECEIVED,
       title: 'Получено решение по проекту',
       message: `${this.getDecisionLabel(dto.decision)}: ${mailing.department.name}${
-        dto.responderEmail ? ` (${dto.responderEmail})` : ''
+        responderEmail ? ` (${responderEmail})` : ''
       }`,
     });
 
@@ -139,10 +164,10 @@ export class ResponsesService {
       subject: `Получено решение по проекту "${mailing.project.title}"`,
       text: [
         `По проекту "${mailing.project.title}" получено решение.`,
-        `Подразделение: ${mailing.department.name} (${mailing.department.code})`,
+        `Подразделение: ${mailing.department.name}`,
         `Решение: ${this.getDecisionLabel(dto.decision)}`,
-        dto.responderName ? `Имя: ${dto.responderName}` : '',
-        dto.responderEmail ? `Email: ${dto.responderEmail}` : '',
+        responderName ? `Имя: ${responderName}` : '',
+        responderEmail ? `Email: ${responderEmail}` : '',
       ]
         .filter(Boolean)
         .join('\n'),
@@ -159,5 +184,16 @@ export class ResponsesService {
     return decision === ResponseDecision.ACCEPTED
       ? 'Участие подтверждено'
       : 'Участие отклонено';
+  }
+
+  private normalizeRecipients(rawRecipients: unknown): string[] {
+    if (!Array.isArray(rawRecipients)) {
+      return [];
+    }
+
+    return rawRecipients
+      .filter((recipient): recipient is string => typeof recipient === 'string')
+      .map((recipient) => recipient.toLowerCase().trim())
+      .filter(Boolean);
   }
 }

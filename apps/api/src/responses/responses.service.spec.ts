@@ -37,6 +37,7 @@ describe('ResponsesService', () => {
       departmentId: 'd1',
       tokenUsed: false,
       response: null,
+      recipients: ['team@utmn.local'],
       project: {
         title: 'Проект',
         authorId: 'u1',
@@ -49,6 +50,12 @@ describe('ResponsesService', () => {
       department: {
         name: 'ШКН',
         code: 'ШКН',
+        recipients: [
+          {
+            email: 'team@utmn.local',
+            displayName: 'Иван Иванов',
+          },
+        ],
       },
     });
 

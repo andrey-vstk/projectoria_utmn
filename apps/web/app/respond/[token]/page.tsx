@@ -4,7 +4,6 @@ import { FormEvent, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { apiRequest } from '@/lib/api';
 
 interface StatusPayload {
@@ -35,11 +34,15 @@ export default function PublicResponsePage() {
     const searchParams = new URLSearchParams(window.location.search);
     const requestedDecision = searchParams.get('decision');
     const responderEmail = searchParams.get('responderEmail');
+    const responderName = searchParams.get('responderName');
     if (requestedDecision === 'ACCEPTED' || requestedDecision === 'DECLINED') {
       setDecision(requestedDecision);
     }
     if (responderEmail) {
       setEmail(responderEmail);
+    }
+    if (responderName) {
+      setName(responderName);
     }
   }, []);
 
@@ -64,7 +67,7 @@ export default function PublicResponsePage() {
         withCsrf: false,
         body: JSON.stringify({
           decision,
-          responderName: name || undefined,
+          responderName: name || status?.department.name || undefined,
           responderEmail: email || undefined,
         }),
       });
@@ -81,24 +84,32 @@ export default function PublicResponsePage() {
     }
   };
 
+  const responderLabel = name || status?.department.name || '';
+
   return (
-    <div className="auth-page">
-      <Card className="auth-card">
-        <h1 className="auth-title">Отклик на проект</h1>
+    <div className="auth-page response-page">
+      <Card className="auth-card response-card">
+        <header className="response-header">
+          <span className="response-eyebrow">Проектория · ТюмГУ</span>
+          <h1 className="auth-title">Решение об участии</h1>
+          <p className="response-header-text">
+            Подтвердите готовность подразделения подключиться к проекту.
+          </p>
+        </header>
 
         {loading ? <p className="muted">Проверяем ссылку...</p> : null}
         {error ? <p className="message-danger">{error}</p> : null}
 
         {status ? (
           <div className="stack-md">
-            <Card className="card-soft">
-              <p style={{ margin: 0 }}>
-                <b>Проект:</b> {status.project.title}
-              </p>
-              <p style={{ margin: '10px 0 0' }}>
-                <b>Подразделение:</b> {status.department.name} ({status.department.code})
-              </p>
-            </Card>
+            <section className="response-project-card">
+              <span className="response-section-label">Проект</span>
+              <h2>{status.project.title}</h2>
+              <div className="response-project-meta">
+                <span>Подразделение</span>
+                <b>{status.department.name}</b>
+              </div>
+            </section>
 
             <details className="response-project-details">
               <summary>Подробнее о проекте и задаче</summary>
@@ -114,8 +125,21 @@ export default function PublicResponsePage() {
               </div>
             </details>
 
+            <section className="response-recipient-card">
+              <span className="response-recipient-icon" aria-hidden="true">
+                @
+              </span>
+              <div>
+                <span className="response-section-label">Персональная ссылка для ответа</span>
+                <strong>{responderLabel}</strong>
+                <span className="response-recipient-email">
+                  {email || 'Ответ будет зафиксирован от имени подразделения'}
+                </span>
+              </div>
+            </section>
+
             {status.tokenUsed ? (
-              <p className="notice">
+              <p className="notice response-status-notice">
                 Решение уже зафиксировано:{' '}
                 <b>
                   {status.decision === 'DECLINED'
@@ -125,7 +149,7 @@ export default function PublicResponsePage() {
                 .
               </p>
             ) : (
-              <form onSubmit={onSubmit} className="stack-sm">
+              <form onSubmit={onSubmit} className="stack-sm response-action-form">
                 <div className="field">
                   <label className="label">Решение подразделения</label>
                   <div className="response-decision-grid">
@@ -165,21 +189,9 @@ export default function PublicResponsePage() {
                     </label>
                   </div>
                 </div>
-                <div className="field">
-                  <label className="label">Имя (опционально)</label>
-                  <Input value={name} onChange={(e) => setName(e.target.value)} />
-                </div>
-                <div className="field">
-                  <label className="label">Email</label>
-                  <Input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="name@utmn.ru"
-                  />
-                </div>
                 <Button
                   type="submit"
+                  className="response-submit"
                   variant={decision === 'DECLINED' ? 'danger' : 'primary'}
                   disabled={submitting}
                 >

@@ -3,8 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import { N8nService } from '../n8n/n8n.service';
 
+interface DepartmentMailRecipient {
+  email: string;
+  displayName: string;
+}
+
 interface SendDepartmentMailInput {
-  recipients: string[];
+  recipients: DepartmentMailRecipient[];
   subject: string;
   body: string;
   responseUrl: string;
@@ -55,9 +60,10 @@ export class MailService implements OnModuleInit {
     return this.escapeHtml(body).replace(/\n/g, '<br/>');
   }
 
-  private addResponderEmail(url: string, recipient: string): string {
+  private addResponderDetails(url: string, recipient: DepartmentMailRecipient): string {
     const personalizedUrl = new URL(url);
-    personalizedUrl.searchParams.set('responderEmail', recipient);
+    personalizedUrl.searchParams.set('responderEmail', recipient.email);
+    personalizedUrl.searchParams.set('responderName', recipient.displayName);
     return personalizedUrl.toString();
   }
 
@@ -121,19 +127,20 @@ export class MailService implements OnModuleInit {
 
   async sendDepartmentMail(input: SendDepartmentMailInput): Promise<void> {
     for (const recipient of input.recipients) {
-      const responseUrl = this.addResponderEmail(input.responseUrl, recipient);
-      const declineResponseUrl = this.addResponderEmail(
+      const responseUrl = this.addResponderDetails(input.responseUrl, recipient);
+      const declineResponseUrl = this.addResponderDetails(
         input.declineResponseUrl,
         recipient,
       );
       const payload = {
-        to: [recipient],
+        to: [recipient.email],
         subject: input.subject,
         body: input.body,
         responseUrl,
         acceptResponseUrl: responseUrl,
         declineResponseUrl,
         projectTitle: input.projectTitle,
+        responderName: recipient.displayName,
       };
 
       const sentViaN8n = await this.n8nService.sendEmailViaWorkflow(payload);
@@ -143,7 +150,7 @@ export class MailService implements OnModuleInit {
 
       await this.transporter.sendMail({
         from: this.configService.get<string>('smtp.from'),
-        to: recipient,
+        to: recipient.email,
         subject: input.subject,
         text: this.buildDepartmentMailText(input, responseUrl, declineResponseUrl),
         html: this.buildDepartmentMailHtml(input, responseUrl, declineResponseUrl),

@@ -73,11 +73,23 @@ export interface ProjectDetail {
   } | null;
   mailings: Array<{
     id: string;
+    mailingId: string;
     subject: string;
     status: string;
     sentAt?: string | null;
-    department: { id: string; code: string; name: string };
-    response?: { id: string; decision: string } | null;
+    department: { id: string; name: string };
+    recipient: {
+      type: 'DEPARTMENT' | 'EMPLOYEE';
+      name: string;
+      email: string;
+    };
+    response?: {
+      id: string;
+      responderEmail?: string | null;
+      responderName?: string | null;
+      decision: string;
+      respondedAt: string;
+    } | null;
   }>;
   responses: Array<{
     id: string;

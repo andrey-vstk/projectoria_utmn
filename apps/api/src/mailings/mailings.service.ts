@@ -83,18 +83,20 @@ export class MailingsService {
         continue;
       }
 
-      await this.prisma.mailing.create({
-        data: {
-          projectId,
-          departmentId: suggestion.departmentId,
-          subject: suggestion.customSubject ?? suggestion.emailSubject,
-          body: suggestion.customBody ?? suggestion.emailBody,
-          recipients,
-          status: MailingStatus.QUEUED,
-          responseToken: randomBytes(32).toString('hex'),
-        },
-      });
-      created += 1;
+      for (const recipient of recipients) {
+        await this.prisma.mailing.create({
+          data: {
+            projectId,
+            departmentId: suggestion.departmentId,
+            subject: suggestion.customSubject ?? suggestion.emailSubject,
+            body: suggestion.customBody ?? suggestion.emailBody,
+            recipients: [recipient],
+            status: MailingStatus.QUEUED,
+            responseToken: randomBytes(32).toString('hex'),
+          },
+        });
+        created += 1;
+      }
     }
 
     if (created === 0) {
@@ -147,7 +149,17 @@ export class MailingsService {
             },
           },
         },
-        department: true,
+        department: {
+          include: {
+            recipients: {
+              where: { isActive: true },
+              select: {
+                email: true,
+                displayName: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -167,7 +179,11 @@ export class MailingsService {
       const declineResponseUrl = `${publicBaseUrl}/respond/${mailing.responseToken}?decision=DECLINED`;
 
       await this.mailService.sendDepartmentMail({
-        recipients: mailing.recipients as string[],
+        recipients: this.resolveMailRecipients(
+          mailing.recipients,
+          mailing.department.name,
+          mailing.department.recipients,
+        ),
         subject: mailing.subject,
         body: mailing.body,
         responseUrl,
@@ -268,5 +284,26 @@ export class MailingsService {
     }
 
     return normalized;
+  }
+
+  private resolveMailRecipients(
+    rawRecipients: unknown,
+    departmentName: string,
+    departmentRecipients: Array<{ email: string; displayName: string | null }>,
+  ): Array<{ email: string; displayName: string }> {
+    const knownRecipients = new Map(
+      departmentRecipients.map((recipient) => [
+        recipient.email.toLowerCase().trim(),
+        recipient.displayName?.trim() || departmentName,
+      ]),
+    );
+    const recipients = Array.isArray(rawRecipients)
+      ? rawRecipients.filter((value): value is string => typeof value === 'string')
+      : [];
+
+    return this.normalizeRecipients(recipients).map((email) => ({
+      email,
+      displayName: knownRecipients.get(email) ?? departmentName,
+    }));
   }
 }

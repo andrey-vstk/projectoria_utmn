@@ -1,9 +1,15 @@
-import { Injectable } from '@nestjs/common';
-import { NotificationType } from '@prisma/client';
+import { Injectable, MessageEvent } from '@nestjs/common';
+import { Notification, NotificationType } from '@prisma/client';
+import { filter, interval, map, merge, Observable, of, Subject } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class NotificationsService {
+  private readonly events = new Subject<{
+    userId: string;
+    notification: Notification;
+  }>();
+
   constructor(private readonly prisma: PrismaService) {}
 
   listForUser(userId: string) {
@@ -14,14 +20,14 @@ export class NotificationsService {
     });
   }
 
-  create(input: {
+  async create(input: {
     userId: string;
     projectId?: string;
     title: string;
     message: string;
     type?: NotificationType;
   }) {
-    return this.prisma.notification.create({
+    const notification = await this.prisma.notification.create({
       data: {
         userId: input.userId,
         projectId: input.projectId,
@@ -30,6 +36,25 @@ export class NotificationsService {
         type: input.type ?? NotificationType.SYSTEM,
       },
     });
+
+    this.events.next({ userId: input.userId, notification });
+    return notification;
+  }
+
+  streamForUser(userId: string): Observable<MessageEvent> {
+    return merge(
+      of({ data: { type: 'connected' } }),
+      this.events.pipe(
+        filter((event) => event.userId === userId),
+        map((event) => ({
+          data: {
+            type: 'notification',
+            notification: event.notification,
+          },
+        })),
+      ),
+      interval(25_000).pipe(map(() => ({ data: { type: 'heartbeat' } }))),
+    );
   }
 
   markRead(notificationId: string, userId: string) {

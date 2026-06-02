@@ -4,7 +4,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, ProjectStatus, Role } from '@prisma/client';
+import {
+  MailingStatus,
+  Prisma,
+  ProjectStatus,
+  ResponseDecision,
+  Role,
+} from '@prisma/client';
 import { AnalysisService } from '../analysis/analysis.service';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { MailingsService } from '../mailings/mailings.service';
@@ -65,7 +71,16 @@ const DETAIL_INCLUDE = {
   },
   mailings: {
     include: {
-      department: true,
+      department: {
+        include: {
+          recipients: {
+            select: {
+              email: true,
+              displayName: true,
+            },
+          },
+        },
+      },
       response: true,
     },
     orderBy: { createdAt: 'asc' },
@@ -77,6 +92,29 @@ const DETAIL_INCLUDE = {
     orderBy: { respondedAt: 'desc' },
   },
 } satisfies Prisma.ProjectInclude;
+
+interface MailingRecipientProjectionInput {
+  id: string;
+  subject: string;
+  status: MailingStatus;
+  sentAt: Date | null;
+  recipients: Prisma.JsonValue;
+  department: {
+    id: string;
+    name: string;
+    recipients: Array<{
+      email: string;
+      displayName: string | null;
+    }>;
+  };
+  response: {
+    id: string;
+    responderEmail: string | null;
+    responderName: string | null;
+    decision: ResponseDecision;
+    respondedAt: Date;
+  } | null;
+}
 
 @Injectable()
 export class ProjectsService {
@@ -106,7 +144,10 @@ export class ProjectsService {
     }
 
     this.checkProjectAccess(project.authorId, currentUser);
-    return project;
+    return {
+      ...project,
+      mailings: this.expandMailingRecipients(project.mailings),
+    };
   }
 
   async create(dto: CreateProjectDto, currentUser: JwtPayload) {
@@ -256,13 +297,25 @@ export class ProjectsService {
     }
     this.checkProjectAccess(project.authorId, currentUser);
 
-    return this.prisma.response.findMany({
+    const mailings = await this.prisma.mailing.findMany({
       where: { projectId },
       include: {
-        department: true,
+        department: {
+          include: {
+            recipients: {
+              select: {
+                email: true,
+                displayName: true,
+              },
+            },
+          },
+        },
+        response: true,
       },
-      orderBy: { respondedAt: 'desc' },
+      orderBy: { createdAt: 'asc' },
     });
+
+    return this.expandMailingRecipients(mailings);
   }
 
   private checkProjectAccess(authorId: string, currentUser: JwtPayload): void {
@@ -289,5 +342,71 @@ export class ProjectsService {
     }
 
     return normalized;
+  }
+
+  private expandMailingRecipients(mailings: MailingRecipientProjectionInput[]) {
+    return mailings.flatMap((mailing) => {
+      const recipientEmails = this.normalizeJsonRecipients(mailing.recipients);
+      const knownRecipients = new Map(
+        mailing.department.recipients.map((recipient) => [
+          recipient.email.toLowerCase().trim(),
+          recipient.displayName?.trim() || null,
+        ]),
+      );
+
+      return recipientEmails.map((email) => {
+        const displayName = knownRecipients.get(email);
+        const response = this.getResponseForRecipient(
+          mailing.response,
+          email,
+          recipientEmails.length,
+        );
+
+        return {
+          id: `${mailing.id}:${email}`,
+          mailingId: mailing.id,
+          subject: mailing.subject,
+          status: mailing.status,
+          sentAt: mailing.sentAt,
+          department: {
+            id: mailing.department.id,
+            name: mailing.department.name,
+          },
+          recipient: {
+            type: displayName ? 'EMPLOYEE' : 'DEPARTMENT',
+            name: displayName || mailing.department.name,
+            email,
+          },
+          response,
+        };
+      });
+    });
+  }
+
+  private normalizeJsonRecipients(recipients: Prisma.JsonValue): string[] {
+    if (!Array.isArray(recipients)) {
+      return [];
+    }
+
+    return this.normalizeRecipients(
+      recipients.filter((recipient): recipient is string => typeof recipient === 'string'),
+    );
+  }
+
+  private getResponseForRecipient(
+    response: MailingRecipientProjectionInput['response'],
+    recipientEmail: string,
+    recipientCount: number,
+  ) {
+    if (!response) {
+      return null;
+    }
+
+    const responderEmail = response.responderEmail?.toLowerCase().trim();
+    if (responderEmail === recipientEmail || recipientCount === 1) {
+      return response;
+    }
+
+    return null;
   }
 }

@@ -1,17 +1,20 @@
 import {
   IsArray,
-  IsEmail,
   IsOptional,
   IsString,
   Matches,
   MaxLength,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+import { DepartmentRecipientDto } from './department-recipient.dto';
 
 export class CreateDepartmentDto {
+  @IsOptional()
   @IsString()
   @MaxLength(12)
   @Matches(/^[\wА-Яа-я-]+$/u)
-  code!: string;
+  code?: string;
 
   @IsString()
   @MaxLength(120)
@@ -22,6 +25,7 @@ export class CreateDepartmentDto {
   description?: string;
 
   @IsArray()
-  @IsEmail({}, { each: true })
-  recipients!: string[];
+  @ValidateNested({ each: true })
+  @Type(() => DepartmentRecipientDto)
+  recipients!: DepartmentRecipientDto[];
 }

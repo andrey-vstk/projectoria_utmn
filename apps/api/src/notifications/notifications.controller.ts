@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Patch } from '@nestjs/common';
+import { Controller, Get, Param, Patch, Sse } from '@nestjs/common';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { NotificationsService } from './notifications.service';
@@ -10,6 +10,11 @@ export class NotificationsController {
   @Get()
   list(@CurrentUser() user: JwtPayload) {
     return this.notificationsService.listForUser(user.sub);
+  }
+
+  @Sse('stream')
+  stream(@CurrentUser() user: JwtPayload) {
+    return this.notificationsService.streamForUser(user.sub);
   }
 
   @Patch(':id/read')

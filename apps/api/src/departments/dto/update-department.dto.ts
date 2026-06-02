@@ -1,11 +1,13 @@
 import {
   IsArray,
   IsBoolean,
-  IsEmail,
   IsOptional,
   IsString,
   MaxLength,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+import { DepartmentRecipientDto } from './department-recipient.dto';
 
 export class UpdateDepartmentDto {
   @IsOptional()
@@ -23,6 +25,7 @@ export class UpdateDepartmentDto {
 
   @IsOptional()
   @IsArray()
-  @IsEmail({}, { each: true })
-  recipients?: string[];
+  @ValidateNested({ each: true })
+  @Type(() => DepartmentRecipientDto)
+  recipients?: DepartmentRecipientDto[];
 }

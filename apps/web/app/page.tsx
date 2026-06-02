@@ -6,6 +6,7 @@ import { ProjectStatusBadge } from '@/components/project-status-badge';
 import { ProtectedPage } from '@/components/protected-page';
 import { Card } from '@/components/ui/card';
 import { apiRequest } from '@/lib/api';
+import { subscribeToNotifications } from '@/lib/realtime';
 import { ProjectListItem } from '@/lib/types';
 
 const ACTIVE_PROJECT_STATUSES = new Set(['QUEUED', 'PROCESSING', 'SENDING']);
@@ -102,18 +103,40 @@ export default function HomePage() {
   }, [hasActiveProjects]);
 
   useEffect(() => {
-    if (!hasActiveProjects) {
-      return;
-    }
-
     const poller = window.setInterval(() => {
       void load();
-    }, 5000);
+    }, hasActiveProjects ? 5000 : 15_000);
 
     return () => {
       window.clearInterval(poller);
     };
   }, [hasActiveProjects, load]);
+
+  useEffect(
+    () =>
+      subscribeToNotifications((notification) => {
+        if (notification.projectId) {
+          void load();
+        }
+      }),
+    [load],
+  );
+
+  useEffect(() => {
+    const refresh = () => void load();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refresh();
+      }
+    };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [load]);
 
   const stats = useMemo(() => {
     const total = projects.length;

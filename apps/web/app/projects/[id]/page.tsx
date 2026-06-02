@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { apiRequest } from '@/lib/api';
+import { subscribeToNotifications } from '@/lib/realtime';
 import {
   MAILING_STATUS_LABELS,
   PROJECT_STATUS_LABELS,
@@ -123,6 +124,43 @@ function getSuggestionsSignature(
   return JSON.stringify(buildSuggestionsPayload(suggestions, draftMap));
 }
 
+type BadgeTone = 'neutral' | 'info' | 'success' | 'danger';
+
+function getMailingStatusTone(status: string): BadgeTone {
+  if (status === 'SENT') {
+    return 'success';
+  }
+  if (status === 'FAILED') {
+    return 'danger';
+  }
+  if (status === 'QUEUED' || status === 'SENDING') {
+    return 'info';
+  }
+  return 'neutral';
+}
+
+function getRealtimeProjectSignature(project: ProjectDetail): string {
+  return [
+    project.status,
+    project.updatedAt,
+    project.analysis?.generationStatus ?? '',
+    project.analysis?.summary ?? '',
+    project.analysis?.suggestions?.length ?? 0,
+    project.analysis?.tasksJson?.length ?? 0,
+    project.mailings
+      .map(
+        (mailing) =>
+          `${mailing.id}:${mailing.status}:${mailing.sentAt ?? ''}:${
+            mailing.response?.decision ?? ''
+          }`,
+      )
+      .join(','),
+    project.responses
+      .map((response) => `${response.id}:${response.decision}:${response.respondedAt}`)
+      .join(','),
+  ].join('|');
+}
+
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
   const projectId = params.id;
@@ -168,25 +206,9 @@ export default function ProjectDetailPage() {
           return data;
         }
 
-        const prevKey = [
-          prev.status,
-          prev.updatedAt,
-          prev.analysis?.generationStatus ?? '',
-          prev.analysis?.summary ?? '',
-          prev.analysis?.suggestions?.length ?? 0,
-          prev.analysis?.tasksJson?.length ?? 0,
-        ].join('|');
-
-        const nextKey = [
-          data.status,
-          data.updatedAt,
-          data.analysis?.generationStatus ?? '',
-          data.analysis?.summary ?? '',
-          data.analysis?.suggestions?.length ?? 0,
-          data.analysis?.tasksJson?.length ?? 0,
-        ].join('|');
-
-        return prevKey === nextKey ? prev : data;
+        return getRealtimeProjectSignature(prev) === getRealtimeProjectSignature(data)
+          ? prev
+          : data;
       });
       if (!options.preserveDrafts) {
         const map = buildDraftMap(data);
@@ -214,6 +236,34 @@ export default function ProjectDetailPage() {
 
   useEffect(() => {
     void loadProject({ showBlockingLoader: true });
+  }, [loadProject]);
+
+  useEffect(
+    () =>
+      subscribeToNotifications((notification) => {
+        if (notification.projectId === projectId) {
+          void loadProject({ preserveDrafts: true, silent: true });
+        }
+      }),
+    [loadProject, projectId],
+  );
+
+  useEffect(() => {
+    const refresh = () => void loadProject({ preserveDrafts: true, silent: true });
+    const poller = window.setInterval(refresh, 15_000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refresh();
+      }
+    };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      window.clearInterval(poller);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, [loadProject]);
 
   const analysisInProgress = useMemo(() => {
@@ -625,7 +675,7 @@ export default function ProjectDetailPage() {
                         <div className="suggestion-card-head">
                           <div className="suggestion-title-wrap">
                             <h4 className="section-title suggestion-title">
-                              {item.department.code} — {item.department.name}
+                              {item.department.name}
                             </h4>
                             <p className="section-subtitle suggestion-subtitle">
                               {recipients.length > 0
@@ -635,7 +685,7 @@ export default function ProjectDetailPage() {
                           </div>
                           <div className="suggestion-head-meta">
                             <Badge
-                              tone={isEnabled ? 'success' : 'neutral'}
+                              tone={isEnabled ? 'info' : 'neutral'}
                               className="suggestion-send-badge"
                             >
                               {isEnabled ? 'В рассылке' : 'Отключено'}
@@ -796,7 +846,7 @@ export default function ProjectDetailPage() {
                 <div>
                   <h3 className="section-title">Рассылка и отклики</h3>
                   <p className="section-subtitle">
-                    Статусы отправки писем и решения подразделений по участию.
+                    Каждая строка соответствует адресу, на который было направлено письмо.
                   </p>
                 </div>
                 <Link href={`/projects/${project.id}/responses`}>
@@ -804,11 +854,12 @@ export default function ProjectDetailPage() {
                 </Link>
               </div>
 
-              <div className="table-wrap">
-                <table>
+              <div className="table-wrap project-activity-table-wrap">
+                <table className="project-activity-table">
                   <thead>
                     <tr>
                       <th>Подразделение</th>
+                      <th>Адресат</th>
                       <th>Статус письма</th>
                       <th>Решение</th>
                       <th>Отправлено</th>
@@ -817,10 +868,24 @@ export default function ProjectDetailPage() {
                   <tbody>
                     {project.mailings.map((mailing) => (
                       <tr key={mailing.id}>
-                        <td>
-                          {mailing.department.code} — {mailing.department.name}
+                        <td className="table-entity-cell">
+                          <strong>{mailing.department.name}</strong>
+                          <span>Подразделение проекта</span>
                         </td>
-                        <td>{MAILING_STATUS_LABELS[mailing.status] ?? mailing.status}</td>
+                        <td className="response-contact-cell">
+                          <strong>{mailing.recipient.name}</strong>
+                          <span>{mailing.recipient.email}</span>
+                          <small className="table-recipient-type">
+                            {mailing.recipient.type === 'EMPLOYEE'
+                              ? 'Сотрудник'
+                              : 'Подразделение'}
+                          </small>
+                        </td>
+                        <td>
+                          <Badge tone={getMailingStatusTone(mailing.status)}>
+                            {MAILING_STATUS_LABELS[mailing.status] ?? mailing.status}
+                          </Badge>
+                        </td>
                         <td>
                           <Badge
                             tone={
@@ -834,7 +899,7 @@ export default function ProjectDetailPage() {
                             {mailing.response
                               ? (RESPONSE_DECISION_LABELS[mailing.response.decision] ??
                                 mailing.response.decision)
-                              : 'Ожидается ответ'}
+                              : 'Без ответа'}
                           </Badge>
                         </td>
                         <td>
@@ -846,7 +911,7 @@ export default function ProjectDetailPage() {
                     ))}
                     {project.mailings.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="muted">
+                        <td colSpan={5} className="muted">
                           Письма еще не сформированы.
                         </td>
                       </tr>

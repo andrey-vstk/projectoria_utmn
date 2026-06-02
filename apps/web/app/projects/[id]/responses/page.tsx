@@ -2,24 +2,43 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ProtectedPage } from '@/components/protected-page';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiRequest } from '@/lib/api';
-import { RESPONSE_DECISION_LABELS } from '@/lib/status';
+import { subscribeToNotifications } from '@/lib/realtime';
+import { MAILING_STATUS_LABELS, RESPONSE_DECISION_LABELS } from '@/lib/status';
 
 interface ResponseItem {
   id: string;
-  responderEmail?: string | null;
-  responderName?: string | null;
-  decision: string;
-  respondedAt: string;
+  mailingId: string;
+  status: string;
+  sentAt?: string | null;
   department: {
-    code: string;
     name: string;
   };
+  recipient: {
+    type: 'DEPARTMENT' | 'EMPLOYEE';
+    name: string;
+    email: string;
+  };
+  response?: {
+    responderEmail?: string | null;
+    responderName?: string | null;
+    decision: string;
+    respondedAt: string;
+  } | null;
+}
+
+type BadgeTone = 'neutral' | 'info' | 'success' | 'danger';
+
+function getMailingStatusTone(status: string): BadgeTone {
+  if (status === 'SENT') return 'success';
+  if (status === 'FAILED') return 'danger';
+  if (status === 'QUEUED' || status === 'SENDING') return 'info';
+  return 'neutral';
 }
 
 export default function ProjectResponsesPage() {
@@ -28,15 +47,57 @@ export default function ProjectResponsesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    apiRequest<ResponseItem[]>(`/projects/${params.id}/responses`, {
-      method: 'GET',
-      withCsrf: false,
-    })
-      .then(setItems)
-      .catch((e) => setError((e as Error).message))
-      .finally(() => setLoading(false));
+  const load = useCallback(async (options: { showLoader?: boolean } = {}) => {
+    if (options.showLoader) {
+      setLoading(true);
+    }
+    try {
+      const data = await apiRequest<ResponseItem[]>(`/projects/${params.id}/responses`, {
+        method: 'GET',
+        withCsrf: false,
+      });
+      setItems(data);
+      setError(null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      if (options.showLoader) {
+        setLoading(false);
+      }
+    }
   }, [params.id]);
+
+  useEffect(() => {
+    void load({ showLoader: true });
+  }, [load]);
+
+  useEffect(
+    () =>
+      subscribeToNotifications((notification) => {
+        if (notification.projectId === params.id) {
+          void load();
+        }
+      }),
+    [load, params.id],
+  );
+
+  useEffect(() => {
+    const refresh = () => void load();
+    const poller = window.setInterval(refresh, 15_000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refresh();
+      }
+    };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      window.clearInterval(poller);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [load]);
 
   return (
     <ProtectedPage>
@@ -44,7 +105,9 @@ export default function ProjectResponsesPage() {
         <div className="page-head">
           <div>
             <h1 className="page-title">Отклики по проекту</h1>
-            <p className="page-subtitle">Решения подразделений по участию в проекте.</p>
+            <p className="page-subtitle">
+              Все адресаты рассылки и полученные решения по проекту.
+            </p>
           </div>
           <Link href={`/projects/${params.id}`}>
             <Button variant="secondary">Назад к проекту</Button>
@@ -54,7 +117,7 @@ export default function ProjectResponsesPage() {
         <Card className="card-soft">
           <div className="section-head">
             <div>
-              <h3 className="section-title">Журнал откликов</h3>
+              <h3 className="section-title">Адресаты и отклики</h3>
             </div>
           </div>
 
@@ -62,37 +125,65 @@ export default function ProjectResponsesPage() {
           {error ? <p className="message-danger">{error}</p> : null}
 
           {!loading ? (
-            <div className="table-wrap">
-              <table>
+            <div className="table-wrap project-activity-table-wrap">
+              <table className="project-activity-table responses-table">
                 <thead>
                   <tr>
                     <th>Подразделение</th>
-                    <th>Решение</th>
-                    <th>Email</th>
-                    <th>Имя</th>
-                    <th>Время</th>
+                    <th>Адресат</th>
+                    <th>Статус письма</th>
+                    <th>Результат</th>
+                    <th>Получено</th>
                   </tr>
                 </thead>
                 <tbody>
                   {items.map((item) => (
                     <tr key={item.id}>
-                      <td>
-                        {item.department.code} — {item.department.name}
+                      <td className="table-entity-cell">
+                        <strong>{item.department.name}</strong>
+                        <span>Подразделение проекта</span>
+                      </td>
+                      <td className="response-contact-cell">
+                        <strong>{item.recipient.name}</strong>
+                        <span>{item.recipient.email}</span>
+                        <small className="table-recipient-type">
+                          {item.recipient.type === 'EMPLOYEE'
+                            ? 'Сотрудник'
+                            : 'Подразделение'}
+                        </small>
                       </td>
                       <td>
-                        <Badge tone={item.decision === 'ACCEPTED' ? 'success' : 'danger'}>
-                          {RESPONSE_DECISION_LABELS[item.decision] ?? item.decision}
+                        <Badge tone={getMailingStatusTone(item.status)}>
+                          {MAILING_STATUS_LABELS[item.status] ?? item.status}
                         </Badge>
                       </td>
-                      <td>{item.responderEmail ?? '—'}</td>
-                      <td>{item.responderName ?? '—'}</td>
-                      <td>{new Date(item.respondedAt).toLocaleString('ru-RU')}</td>
+                      <td>
+                        <Badge
+                          tone={
+                            !item.response
+                              ? 'neutral'
+                              : item.response.decision === 'ACCEPTED'
+                                ? 'success'
+                                : 'danger'
+                          }
+                        >
+                          {item.response
+                            ? (RESPONSE_DECISION_LABELS[item.response.decision] ??
+                              item.response.decision)
+                            : 'Без ответа'}
+                        </Badge>
+                      </td>
+                      <td>
+                        {item.response
+                          ? new Date(item.response.respondedAt).toLocaleString('ru-RU')
+                          : '—'}
+                      </td>
                     </tr>
                   ))}
                   {items.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="muted">
-                        Пока нет откликов.
+                        Адресаты рассылки пока отсутствуют.
                       </td>
                     </tr>
                   ) : null}

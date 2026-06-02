@@ -3,38 +3,96 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { apiRequest } from '@/lib/api';
+import { API_URL, apiRequest } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import {
+  announceNotification,
+  RealtimeNotification,
+} from '@/lib/realtime';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
-
-interface Notification {
-  id: string;
-  projectId?: string | null;
-  title: string;
-  message: string;
-  isRead: boolean;
-  createdAt: string;
-}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAuth();
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifications, setNotifications] = useState<RealtimeNotification[]>([]);
 
-  useEffect(() => {
+  const loadNotifications = useCallback(async () => {
     if (!user) {
       setNotifications([]);
       return;
     }
 
-    apiRequest<Notification[]>('/notifications', { method: 'GET', withCsrf: false })
-      .then(setNotifications)
-      .catch(() => setNotifications([]));
-  }, [user, pathname]);
+    try {
+      const data = await apiRequest<RealtimeNotification[]>('/notifications', {
+        method: 'GET',
+        withCsrf: false,
+      });
+      setNotifications(data);
+    } catch {
+      // Keep the current list while the realtime connection is reconnecting.
+    }
+  }, [user]);
+
+  useEffect(() => {
+    void loadNotifications();
+  }, [loadNotifications, pathname]);
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    const stream = new EventSource(`${API_URL}/notifications/stream`, {
+      withCredentials: true,
+    });
+    stream.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data) as {
+          type?: string;
+          notification?: RealtimeNotification;
+        };
+        if (payload.type !== 'notification' || !payload.notification) {
+          return;
+        }
+
+        setNotifications((items) => [
+          payload.notification!,
+          ...items.filter((item) => item.id !== payload.notification!.id),
+        ]);
+        announceNotification(payload.notification);
+      } catch {
+        // Ignore malformed stream events and keep the connection alive.
+      }
+    };
+
+    return () => stream.close();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    const refresh = () => void loadNotifications();
+    const poller = window.setInterval(refresh, 15_000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refresh();
+      }
+    };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      window.clearInterval(poller);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [loadNotifications, user]);
 
   const unreadCount = useMemo(
     () => notifications.filter((item) => !item.isRead).length,
@@ -63,7 +121,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   ];
 
   const visibleItems = items.filter((item) => !item.adminOnly || user?.role === 'ADMIN');
-  const hideHeader = !user && pathname === '/login';
+  const hideHeader =
+    !user && (pathname === '/login' || pathname.startsWith('/respond/'));
 
   const isActiveLink = (href: string) => {
     if (href === '/') {

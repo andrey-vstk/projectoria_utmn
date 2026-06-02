@@ -56,6 +56,7 @@ export class PublicResponsesController {
   async htmlPage(
     @Param('token') token: string,
     @Query('responderEmail') responderEmail: string | undefined,
+    @Query('responderName') responderName: string | undefined,
     @Res() res: Response,
   ) {
     const status = await this.responsesService.getTokenStatus(token);
@@ -63,6 +64,8 @@ export class PublicResponsesController {
     const safeProjectSummary = escapeHtml(status.project.summary);
     const safeProposedTask = escapeHtml(status.proposedTask);
     const safeDepartmentName = escapeHtml(status.department.name);
+    const resolvedResponderName = responderName?.trim() || status.department.name;
+    const safeResponderName = escapeHtml(resolvedResponderName);
     const safeResponderEmail = escapeHtml(responderEmail ?? '');
     const encodedToken = encodeURIComponent(token);
 
@@ -82,12 +85,18 @@ export class PublicResponsesController {
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Отклик на проект</title>
     <style>
-      body { font-family: Arial, sans-serif; background: #f7fbfd; margin:0; padding:40px; color:#1f2937; }
-      .card { max-width: 560px; margin:0 auto; background:#fff; border:1px solid #d9eefb; border-radius:12px; padding:24px; }
-      h1 { margin-top:0; font-size:24px; }
-      input { width:100%; padding:10px; margin: 8px 0 16px; border-radius:8px; border:1px solid #c7d2e0; box-sizing:border-box; }
+      body { font-family:Arial,sans-serif; background:radial-gradient(circle at 8% 2%,rgba(0,174,239,.08),transparent 32%),radial-gradient(circle at 92% 5%,rgba(0,174,239,.09),transparent 27%),linear-gradient(180deg,#f9fcff 0%,#eef3f8 100%); margin:0; padding:40px 18px; color:#1f2937; }
+      .card { max-width:680px; margin:0 auto; background:#fff; border:1px solid #cce5f1; border-radius:22px; padding:28px; box-shadow:0 22px 56px rgba(19,85,111,.13); }
+      .eyebrow { margin:0 0 7px; color:#087ca8; font-size:12px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; }
+      h1 { margin:0 0 22px; font-size:28px; color:#12344d; }
+      .project { padding:16px; border-radius:14px; background:linear-gradient(135deg,#eefaff,#f8fcff); border:1px solid #d4eaf4; }
+      .recipient { display:flex; gap:12px; align-items:center; margin:16px 0; padding:14px 16px; border-radius:14px; background:#f4fbf8; border:1px solid #cce9dd; }
+      .recipient-icon { display:grid; place-items:center; width:34px; height:34px; border-radius:50%; background:#d8f1e7; color:#187251; font-weight:800; }
+      .recipient strong,.recipient span { display:block; }
+      .recipient .label { margin-bottom:3px; color:#4b647a; font-size:11px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; }
+      .recipient .email { margin-top:3px; color:#577082; font-size:13px; }
       .actions { display:flex; gap:10px; flex-wrap:wrap; }
-      button { border:none; border-radius:8px; padding:12px 16px; cursor:pointer; background:#00AEEF; color:#fff; font-weight:600; }
+      button { border:none; border-radius:10px; padding:13px 17px; cursor:pointer; background:#00AEEF; color:#fff; font-weight:700; }
       button.decline { background:#fff1f1; color:#991b1b; border:1px solid #fecaca; }
       details { margin:16px 0; border:1px solid #d9eefb; border-radius:10px; background:#f8fbfe; }
       summary { padding:12px 14px; cursor:pointer; color:#12344d; font-weight:700; }
@@ -101,9 +110,12 @@ export class PublicResponsesController {
   </head>
   <body>
     <div class="card">
+      <p class="eyebrow">Проектория · ТюмГУ</p>
       <h1>Решение об участии в проекте</h1>
-      <p><b>Проект:</b> ${safeProjectTitle}</p>
-      <p><b>Подразделение:</b> ${safeDepartmentName}</p>
+      <div class="project">
+        <p><b>Проект:</b> ${safeProjectTitle}</p>
+        <p><b>Подразделение:</b> ${safeDepartmentName}</p>
+      </div>
       <details>
         <summary>Подробнее о проекте и задаче</summary>
         <div class="details-content">
@@ -113,12 +125,15 @@ export class PublicResponsesController {
           <p>${safeProposedTask || 'Описание задачи не указано.'}</p>
         </div>
       </details>
-      <p class="muted">Email и имя можно оставить пустыми, отклик будет зафиксирован по токену ссылки.</p>
-      <form id="response-form">
-        <label>Email</label>
-        <input type="email" name="responderEmail" value="${safeResponderEmail}" placeholder="name@utmn.ru" />
-        <label>Имя</label>
-        <input type="text" name="responderName" placeholder="ФИО" />
+      <div class="recipient">
+        <span class="recipient-icon">@</span>
+        <div>
+          <span class="label">Персональная ссылка для ответа</span>
+          <strong>${safeResponderName}</strong>
+          <span class="email">${safeResponderEmail || 'Ответ будет зафиксирован от имени подразделения'}</span>
+        </div>
+      </div>
+      <form id="response-form" data-responder-email="${safeResponderEmail}" data-responder-name="${safeResponderName}">
         <div class="actions">
           <button type="submit" name="decision" value="ACCEPTED">Подтвердить участие</button>
           <button type="submit" name="decision" value="DECLINED" class="decline">Отказаться от участия</button>
@@ -131,10 +146,11 @@ export class PublicResponsesController {
       const result = document.getElementById('result');
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
-        const data = Object.fromEntries(new FormData(form).entries());
-        const payload = { decision: event.submitter?.value || 'ACCEPTED' };
-        if (data.responderEmail) payload.responderEmail = data.responderEmail;
-        if (data.responderName) payload.responderName = data.responderName;
+        const payload = {
+          decision: event.submitter?.value || 'ACCEPTED',
+          responderName: form.dataset.responderName
+        };
+        if (form.dataset.responderEmail) payload.responderEmail = form.dataset.responderEmail;
         const response = await fetch('/public/responses/${encodedToken}', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

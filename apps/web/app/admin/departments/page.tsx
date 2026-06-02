@@ -16,12 +16,21 @@ interface Department {
   name: string;
   description?: string | null;
   isActive: boolean;
-  recipients: Array<{ email: string }>;
+  recipients: DepartmentRecipient[];
 }
 
-function normalizeRecipients(recipients: Array<{ email: string }>): string[] {
+interface DepartmentRecipient {
+  email: string;
+  displayName?: string | null;
+}
+
+function createEmptyRecipient(): DepartmentRecipient {
+  return { displayName: '', email: '' };
+}
+
+function normalizeRecipients(recipients: DepartmentRecipient[]): DepartmentRecipient[] {
   const seen = new Set<string>();
-  const normalized: string[] = [];
+  const normalized: DepartmentRecipient[] = [];
 
   for (const recipient of recipients) {
     const email = recipient.email.toLowerCase().trim();
@@ -29,7 +38,10 @@ function normalizeRecipients(recipients: Array<{ email: string }>): string[] {
       continue;
     }
     seen.add(email);
-    normalized.push(email);
+    normalized.push({
+      displayName: recipient.displayName?.trim() || null,
+      email,
+    });
   }
 
   return normalized;
@@ -51,10 +63,11 @@ export default function AdminDepartmentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
 
-  const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [recipients, setRecipients] = useState('');
+  const [recipients, setRecipients] = useState<DepartmentRecipient[]>([
+    createEmptyRecipient(),
+  ]);
 
   const load = async () => {
     setLoading(true);
@@ -79,12 +92,6 @@ export default function AdminDepartmentsPage() {
     void load();
   }, []);
 
-  const parseRecipients = (value: string): string[] =>
-    value
-      .split(/[,\n;]+/g)
-      .map((item) => item.trim())
-      .filter(Boolean);
-
   const isDepartmentDirty = (item: Department): boolean => {
     const initialSignature = initialSignatures[item.id];
     if (!initialSignature) {
@@ -101,16 +108,14 @@ export default function AdminDepartmentsPage() {
       await apiRequest('/departments', {
         method: 'POST',
         body: JSON.stringify({
-          code,
           name,
           description,
-          recipients: parseRecipients(recipients),
+          recipients: normalizeRecipients(recipients),
         }),
       });
-      setCode('');
       setName('');
       setDescription('');
-      setRecipients('');
+      setRecipients([createEmptyRecipient()]);
       await load();
     } catch (e) {
       setError((e as Error).message);
@@ -131,7 +136,7 @@ export default function AdminDepartmentsPage() {
           name: department.name,
           description: department.description,
           isActive: department.isActive,
-          recipients: department.recipients.map((r) => r.email),
+          recipients: normalizeRecipients(department.recipients),
         }),
       });
       await load();
@@ -140,6 +145,70 @@ export default function AdminDepartmentsPage() {
     } finally {
       setSavingId(null);
     }
+  };
+
+  const updateNewRecipient = (
+    index: number,
+    field: keyof DepartmentRecipient,
+    value: string,
+  ) => {
+    setRecipients((prev) =>
+      prev.map((recipient, recipientIndex) =>
+        recipientIndex === index ? { ...recipient, [field]: value } : recipient,
+      ),
+    );
+  };
+
+  const removeNewRecipient = (index: number) => {
+    setRecipients((prev) => prev.filter((_, recipientIndex) => recipientIndex !== index));
+  };
+
+  const updateDepartmentRecipient = (
+    departmentId: string,
+    index: number,
+    field: keyof DepartmentRecipient,
+    value: string,
+  ) => {
+    setItems((prev) =>
+      prev.map((department) =>
+        department.id === departmentId
+          ? {
+              ...department,
+              recipients: department.recipients.map((recipient, recipientIndex) =>
+                recipientIndex === index ? { ...recipient, [field]: value } : recipient,
+              ),
+            }
+          : department,
+      ),
+    );
+  };
+
+  const addDepartmentRecipient = (departmentId: string) => {
+    setItems((prev) =>
+      prev.map((department) =>
+        department.id === departmentId
+          ? {
+              ...department,
+              recipients: [...department.recipients, createEmptyRecipient()],
+            }
+          : department,
+      ),
+    );
+  };
+
+  const removeDepartmentRecipient = (departmentId: string, index: number) => {
+    setItems((prev) =>
+      prev.map((department) =>
+        department.id === departmentId
+          ? {
+              ...department,
+              recipients: department.recipients.filter(
+                (_, recipientIndex) => recipientIndex !== index,
+              ),
+            }
+          : department,
+      ),
+    );
   };
 
   return (
@@ -161,11 +230,7 @@ export default function AdminDepartmentsPage() {
             </div>
 
             <form onSubmit={createDepartment} className="grid-2">
-              <div className="field">
-                <label className="label">Код</label>
-                <Input value={code} onChange={(e) => setCode(e.target.value)} required />
-              </div>
-              <div className="field">
+              <div className="field" style={{ gridColumn: '1 / -1' }}>
                 <label className="label">Название</label>
                 <Input value={name} onChange={(e) => setName(e.target.value)} required />
               </div>
@@ -178,13 +243,51 @@ export default function AdminDepartmentsPage() {
                 />
               </div>
               <div className="field" style={{ gridColumn: '1 / -1' }}>
-                <label className="label">Email получателей (через запятую)</label>
-                <Input
-                  value={recipients}
-                  onChange={(e) => setRecipients(e.target.value)}
-                  placeholder="dep1@utmn.local, dep2@utmn.local"
-                  required
-                />
+                <label className="label">Сотрудники и адресаты</label>
+                <div className="department-recipient-editor department-recipient-editor-create">
+                  <div className="department-recipient-editor-head">
+                    <span>ФИО сотрудника или подразделение</span>
+                    <span>Рабочая почта</span>
+                  </div>
+                  {recipients.map((recipient, index) => (
+                    <div className="department-recipient-row" key={index}>
+                      <Input
+                        value={recipient.displayName ?? ''}
+                        onChange={(event) =>
+                          updateNewRecipient(index, 'displayName', event.target.value)
+                        }
+                        placeholder="Иванов Иван Иванович"
+                      />
+                      <Input
+                        type="email"
+                        value={recipient.email}
+                        onChange={(event) =>
+                          updateNewRecipient(index, 'email', event.target.value)
+                        }
+                        placeholder="employee@utmn.ru"
+                        required
+                      />
+                      <button
+                        type="button"
+                        className="department-recipient-remove"
+                        onClick={() => removeNewRecipient(index)}
+                        disabled={recipients.length === 1}
+                      >
+                        Удалить
+                      </button>
+                    </div>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="department-recipient-add"
+                    onClick={() =>
+                      setRecipients((prev) => [...prev, createEmptyRecipient()])
+                    }
+                  >
+                    Добавить сотрудника
+                  </Button>
+                </div>
               </div>
               <div>
                 <Button type="submit">Создать</Button>
@@ -207,9 +310,8 @@ export default function AdminDepartmentsPage() {
                 <table className="departments-table">
                   <thead>
                     <tr>
-                      <th className="departments-col-code">Код</th>
                       <th>Название</th>
-                      <th>Email</th>
+                      <th>Сотрудники и адресаты</th>
                       <th className="departments-col-active">Активно</th>
                       <th className="departments-col-actions">Действия</th>
                     </tr>
@@ -220,10 +322,8 @@ export default function AdminDepartmentsPage() {
                         key={item.id}
                         className={cn(!item.isActive && 'departments-row-inactive')}
                       >
-                        <td>
-                          <span className="departments-code-chip">{item.code}</span>
-                        </td>
-                        <td>
+                        <td className="departments-name-cell">
+                          <span className="departments-cell-label">Подразделение</span>
                           <Input
                             value={item.name}
                             onChange={(e) =>
@@ -236,23 +336,55 @@ export default function AdminDepartmentsPage() {
                           />
                         </td>
                         <td>
-                          <Input
-                            value={item.recipients.map((r) => r.email).join(', ')}
-                            onChange={(e) =>
-                              setItems((prev) =>
-                                prev.map((d) =>
-                                  d.id === item.id
-                                    ? {
-                                        ...d,
-                                        recipients: parseRecipients(e.target.value).map(
-                                          (email) => ({ email }),
-                                        ),
-                                      }
-                                    : d,
-                                ),
-                              )
-                            }
-                          />
+                          <div className="department-recipient-editor department-recipient-editor-table">
+                            <span className="department-recipient-count">
+                              {item.recipients.length} адресат(ов)
+                            </span>
+                            {item.recipients.map((recipient, index) => (
+                              <div className="department-recipient-row" key={index}>
+                                <Input
+                                  value={recipient.displayName ?? ''}
+                                  onChange={(event) =>
+                                    updateDepartmentRecipient(
+                                      item.id,
+                                      index,
+                                      'displayName',
+                                      event.target.value,
+                                    )
+                                  }
+                                  placeholder={item.name}
+                                />
+                                <Input
+                                  type="email"
+                                  value={recipient.email}
+                                  onChange={(event) =>
+                                    updateDepartmentRecipient(
+                                      item.id,
+                                      index,
+                                      'email',
+                                      event.target.value,
+                                    )
+                                  }
+                                  placeholder="employee@utmn.ru"
+                                />
+                                <button
+                                  type="button"
+                                  className="department-recipient-remove"
+                                  onClick={() => removeDepartmentRecipient(item.id, index)}
+                                >
+                                  Удалить
+                                </button>
+                              </div>
+                            ))}
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              className="department-recipient-add"
+                              onClick={() => addDepartmentRecipient(item.id)}
+                            >
+                              Добавить сотрудника
+                            </Button>
+                          </div>
                         </td>
                         <td className="departments-col-active">
                           <label className="suggestion-toggle departments-toggle">
@@ -290,7 +422,7 @@ export default function AdminDepartmentsPage() {
                     ))}
                     {items.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="muted">
+                        <td colSpan={4} className="muted">
                           Подразделения отсутствуют.
                         </td>
                       </tr>
