@@ -34,7 +34,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         withCsrf: false,
       });
       setUser(me);
-      const csrfFromCookie = getCookie('diplom_csrf');
+      const csrfFromCookie = getCookie('projectoria_csrf');
       if (csrfFromCookie) {
         setCsrfToken(csrfFromCookie);
       }

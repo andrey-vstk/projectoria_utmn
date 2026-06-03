@@ -67,9 +67,9 @@ export class AuthService {
 
   applyAuthCookies(input: AuthCookiesInput): void {
     const cookieName =
-      this.configService.get<string>('jwt.cookieName') ?? 'diplom_access';
+      this.configService.get<string>('jwt.cookieName') ?? 'projectoria_access';
     const csrfCookieName =
-      this.configService.get<string>('csrf.cookieName') ?? 'diplom_csrf';
+      this.configService.get<string>('csrf.cookieName') ?? 'projectoria_csrf';
     const isProd = this.configService.get<string>('nodeEnv') === 'production';
 
     input.res.cookie(cookieName, input.accessToken, {
@@ -91,9 +91,9 @@ export class AuthService {
 
   clearAuthCookies(res: Response): void {
     const cookieName =
-      this.configService.get<string>('jwt.cookieName') ?? 'diplom_access';
+      this.configService.get<string>('jwt.cookieName') ?? 'projectoria_access';
     const csrfCookieName =
-      this.configService.get<string>('csrf.cookieName') ?? 'diplom_csrf';
+      this.configService.get<string>('csrf.cookieName') ?? 'projectoria_csrf';
 
     res.clearCookie(cookieName, { path: '/' });
     res.clearCookie(csrfCookieName, { path: '/' });

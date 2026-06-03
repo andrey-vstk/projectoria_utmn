@@ -1,0 +1,254 @@
+Памятка: настройка OpenVPN на VPS для доступа к внешней Ollama
+================================================================
+
+Цель
+----
+Подключить VPS к VPN-сети, где доступна Ollama, и дать проекту доступ к:
+
+  http://10.255.243.25:11434
+
+В нашем случае рабочая проверка:
+
+  curl --connect-timeout 5 http://10.255.243.25:11434/api/tags
+
+должна вернуть список моделей, например qwen3.6:35b.
+
+Важно
+-----
+- Не хранить логин/пароль VPN в репозитории.
+- Файлы /etc/openvpn/client/ollama.conf и /etc/openvpn/client/ollama.auth должны быть доступны только root.
+- Если после перезапуска VPN маршрут пропал, значит строка route не добавлена в .conf или добавлена неправильно.
+
+1. Подключиться к серверу
+-------------------------
+
+  ssh root@45.80.71.202
+
+При первом подключении SSH спросит подтверждение fingerprint:
+
+  Are you sure you want to continue connecting (yes/no/[fingerprint])?
+
+Ввести:
+
+  yes
+
+2. Установить OpenVPN
+---------------------
+
+  sudo apt update
+  sudo apt install -y openvpn
+
+Проверить, что пакет установлен:
+
+  openvpn --version
+
+3. Загрузить .ovpn файл на сервер
+---------------------------------
+
+На своем компьютере, не на сервере, выполнить:
+
+  scp ~/Downloads/config.ovpn root@45.80.71.202:/tmp/ollama.ovpn
+
+Если файл лежит в другом месте, заменить путь ~/Downloads/config.ovpn.
+
+Если SSH использует нестандартный порт:
+
+  scp -P 2222 ~/Downloads/config.ovpn root@45.80.71.202:/tmp/ollama.ovpn
+
+4. Перенести конфиг OpenVPN в системную папку
+---------------------------------------------
+
+На сервере:
+
+  sudo mkdir -p /etc/openvpn/client
+  sudo mv /tmp/ollama.ovpn /etc/openvpn/client/ollama.conf
+  sudo chmod 600 /etc/openvpn/client/ollama.conf
+  ls -l /etc/openvpn/client/ollama.conf
+
+Ожидаемо:
+
+  -rw------- 1 root root ... /etc/openvpn/client/ollama.conf
+
+5. Создать файл с логином и паролем VPN
+---------------------------------------
+
+  sudo nano /etc/openvpn/client/ollama.auth
+
+В файле должно быть ровно две строки:
+
+  VPN_LOGIN
+  VPN_PASSWORD
+
+Где:
+- первая строка - логин VPN;
+- вторая строка - пароль VPN.
+
+Сохранение в nano:
+- Ctrl + O
+- Enter
+- Ctrl + X
+
+Выставить права:
+
+  sudo chmod 600 /etc/openvpn/client/ollama.auth
+
+6. Привязать auth-файл к OpenVPN-конфигу
+----------------------------------------
+
+Открыть конфиг:
+
+  sudo nano /etc/openvpn/client/ollama.conf
+
+Найти строку:
+
+  auth-user-pass
+
+Заменить на:
+
+  auth-user-pass /etc/openvpn/client/ollama.auth
+
+7. Добавить постоянный маршрут до Ollama
+----------------------------------------
+
+В этот же файл /etc/openvpn/client/ollama.conf добавить строку:
+
+  route 10.255.243.25 255.255.255.255
+
+Эта строка нужна, чтобы сервер ходил к 10.255.243.25 через VPN, а не через обычный интернет-интерфейс eth0.
+
+Сохранение в nano:
+- Ctrl + O
+- Enter
+- Ctrl + X
+
+8. Запустить OpenVPN как systemd service
+----------------------------------------
+
+  sudo systemctl enable --now openvpn-client@ollama
+
+Проверить статус:
+
+  sudo systemctl status openvpn-client@ollama
+
+Хорошие признаки:
+
+  Active: active (running)
+  Status: "Initialization Sequence Completed"
+  TUN/TAP device tun0 opened
+
+Если нужно выйти из просмотра status:
+
+  q
+
+9. Проверить маршрут до Ollama
+------------------------------
+
+  ip route get 10.255.243.25
+
+До исправления было плохо:
+
+  10.255.243.25 via 100.100.1.1 dev eth0 src 45.80.71.202
+
+Это значит, что сервер идет не через VPN.
+
+После правильной настройки должно быть примерно так:
+
+  10.255.243.25 via 192.168.53.1 dev tun0 src 192.168.53.53
+
+или так:
+
+  10.255.243.25 dev tun0 src 192.168.53.53
+
+Главное: должен быть dev tun0.
+
+10. Временное исправление маршрута, если нужно срочно проверить
+---------------------------------------------------------------
+
+Если маршрут идет через eth0, можно временно добавить маршрут вручную:
+
+  sudo ip route add 10.255.243.25/32 dev tun0
+
+Потом проверить:
+
+  ip route get 10.255.243.25
+
+Важно: ручной маршрут пропадет после перезагрузки сервера или рестарта VPN.
+Для постоянной настройки нужна строка route в ollama.conf.
+
+11. Проверить доступ к Ollama
+-----------------------------
+
+  curl --connect-timeout 5 http://10.255.243.25:11434/api/tags
+
+Успешный ответ выглядит как JSON со списком моделей:
+
+  {"models":[{"name":"qwen3.6:35b", ...}]}
+
+Если curl зависает, использовать таймаут:
+
+  curl --connect-timeout 5 -v http://10.255.243.25:11434/api/tags
+
+Если в выводе есть:
+
+  Connected to 10.255.243.25 port 11434
+  HTTP/1.1 200 OK
+
+значит доступ работает.
+
+12. Перезапуск VPN после изменения конфига
+------------------------------------------
+
+  sudo systemctl restart openvpn-client@ollama
+
+Проверить снова:
+
+  ip route get 10.255.243.25
+  curl --connect-timeout 5 http://10.255.243.25:11434/api/tags
+
+13. Проверить доступ из Docker-контейнера проекта
+-------------------------------------------------
+
+После запуска проекта:
+
+  docker compose exec api node -e "fetch('http://10.255.243.25:11434/api/tags').then(r=>r.text()).then(console.log).catch(e=>{console.error(e); process.exit(1)})"
+
+Если с хоста curl работает, а из контейнера нет, включить forwarding и NAT:
+
+  sudo sysctl -w net.ipv4.ip_forward=1
+  sudo iptables -t nat -A POSTROUTING -s 172.16.0.0/12 -o tun0 -j MASQUERADE
+
+Для постоянной настройки NAT лучше отдельно настроить iptables-persistent или nftables.
+
+14. Полезные команды диагностики
+--------------------------------
+
+Статус VPN:
+
+  sudo systemctl status openvpn-client@ollama
+
+Логи VPN:
+
+  sudo journalctl -u openvpn-client@ollama -n 80 --no-pager
+
+Маршруты:
+
+  ip route
+  ip route get 10.255.243.25
+
+Сетевые интерфейсы:
+
+  ip addr show tun0
+
+Проверка Ollama:
+
+  curl --connect-timeout 5 -v http://10.255.243.25:11434/api/tags
+
+15. Что должно быть в n8n workflow
+----------------------------------
+
+URL HTTP Request node для Ollama:
+
+  http://10.255.243.25:11434/api/chat
+
+Если /api/tags работает на VPS, то n8n внутри Docker должен обращаться к этому адресу после запуска проекта.
+

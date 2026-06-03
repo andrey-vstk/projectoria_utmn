@@ -13,7 +13,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private readonly usersService: UsersService,
   ) {
     const cookieName =
-      configService.get<string>('jwt.cookieName') ?? 'diplom_access';
+      configService.get<string>('jwt.cookieName') ?? 'projectoria_access';
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
         (request: { cookies?: Record<string, string> } | undefined): string | null =>

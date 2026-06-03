@@ -6,7 +6,7 @@ export default () => ({
   publicBaseUrl: process.env.PUBLIC_BASE_URL ?? 'http://localhost:3000',
   databaseUrl:
     process.env.DATABASE_URL ??
-    'postgresql://postgres:postgres@localhost:5432/diplom?schema=public',
+    'postgresql://postgres:postgres@localhost:5432/projectoria?schema=public',
   redis: {
     host: process.env.REDIS_HOST ?? 'localhost',
     port: Number(process.env.REDIS_PORT ?? 6379),
@@ -15,14 +15,14 @@ export default () => ({
   jwt: {
     secret: process.env.JWT_ACCESS_SECRET ?? 'change_me_access_secret',
     ttl: process.env.JWT_ACCESS_TTL ?? '8h',
-    cookieName: process.env.JWT_COOKIE_NAME ?? 'diplom_access',
+    cookieName: process.env.JWT_COOKIE_NAME ?? 'projectoria_access',
   },
   csrf: {
-    cookieName: process.env.CSRF_COOKIE_NAME ?? 'diplom_csrf',
+    cookieName: process.env.CSRF_COOKIE_NAME ?? 'projectoria_csrf',
   },
   smtp: {
-    host: process.env.SMTP_HOST ?? 'localhost',
-    port: Number(process.env.SMTP_PORT ?? 1025),
+    host: process.env.SMTP_HOST ?? '',
+    port: Number(process.env.SMTP_PORT ?? 465),
     secure: process.env.SMTP_SECURE === 'true',
     user: process.env.SMTP_USER ?? '',
     pass: process.env.SMTP_PASS ?? '',

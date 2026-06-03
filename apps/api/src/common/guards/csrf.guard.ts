@@ -37,7 +37,7 @@ export class CsrfGuard implements CanActivate {
     }
 
     const cookieName =
-      this.configService.get<string>('csrf.cookieName') ?? 'diplom_csrf';
+      this.configService.get<string>('csrf.cookieName') ?? 'projectoria_csrf';
     const cookieToken = request.cookies?.[cookieName] as string | undefined;
     const headerToken =
       (request.headers['x-csrf-token'] as string | undefined) ??

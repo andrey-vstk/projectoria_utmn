@@ -220,7 +220,6 @@ docker compose up --build
 Сервисы:
 - Web: `http://localhost:3000`
 - API: `http://localhost:3001`
-- MailHog UI: `http://localhost:8025`
 - n8n: `http://localhost:5678`
 - Ollama: `http://localhost:11434`
 - Postgres: `localhost:5432`
@@ -274,7 +273,8 @@ Seed (`apps/api/prisma/seed.js`) создает:
 - `SMTP_PASS`
 - `SMTP_FROM`
 
-В dev по умолчанию используется MailHog (`1025`), письма видны в `http://localhost:8025`.
+Для отправки писем наружу укажите реальные SMTP-параметры в `.env`.
+Например, для Яндекс SMTP обычно используются `SMTP_HOST=smtp.yandex.ru`, `SMTP_PORT=465`, `SMTP_SECURE=true` и пароль приложения в `SMTP_PASS`.
 
 ## 14) Интеграция с n8n
 
