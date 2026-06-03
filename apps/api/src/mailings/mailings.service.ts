@@ -12,6 +12,10 @@ import { Queue } from 'bullmq';
 import { MailingStatus, ProjectStatus } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { ConfigService } from '@nestjs/config';
+import {
+  buildDepartmentInvitationBody,
+  buildDepartmentInvitationSubject,
+} from '../common/utils/department-invitation.util';
 
 @Injectable()
 export class MailingsService {
@@ -84,12 +88,31 @@ export class MailingsService {
       }
 
       for (const recipient of recipients) {
+        const customSubject = this.resolveManualOverride(
+          suggestion.customSubject,
+          suggestion.emailSubject,
+        );
+        const customBody = this.resolveManualOverride(
+          suggestion.customBody,
+          suggestion.emailBody,
+        );
+
         await this.prisma.mailing.create({
           data: {
             projectId,
             departmentId: suggestion.departmentId,
-            subject: suggestion.customSubject ?? suggestion.emailSubject,
-            body: suggestion.customBody ?? suggestion.emailBody,
+            subject:
+              customSubject ??
+              buildDepartmentInvitationSubject({ projectTitle: project.title }),
+            body:
+              customBody ??
+              buildDepartmentInvitationBody({
+                projectTitle: project.title,
+                departmentName: suggestion.department.name,
+                relevanceReason: suggestion.relevanceReason,
+                adaptedPitch: suggestion.adaptedPitch,
+                problemFragment: suggestion.problemFragment,
+              }),
             recipients: [recipient],
             status: MailingStatus.QUEUED,
             responseToken: randomBytes(32).toString('hex'),
@@ -132,6 +155,18 @@ export class MailingsService {
     }
 
     return { created };
+  }
+
+  private resolveManualOverride(
+    customValue: string | null,
+    generatedValue: string,
+  ): string | null {
+    const custom = customValue?.trim();
+    if (!custom || custom === generatedValue.trim()) {
+      return null;
+    }
+
+    return custom;
   }
 
   async sendOne(mailingId: string): Promise<void> {

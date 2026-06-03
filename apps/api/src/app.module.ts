@@ -20,7 +20,6 @@ import { PrismaModule } from './prisma/prisma.module';
 import { ProjectsModule } from './projects/projects.module';
 import { QueueModule } from './queues/queue.module';
 import { ResponsesModule } from './responses/responses.module';
-import { SystemSettingsModule } from './system-settings/system-settings.module';
 import { UsersModule } from './users/users.module';
 
 @Module({
@@ -61,7 +60,6 @@ import { UsersModule } from './users/users.module';
     NotificationsModule,
     ResponsesModule,
     ProjectsModule,
-    SystemSettingsModule,
     QueueModule,
   ],
   providers: [

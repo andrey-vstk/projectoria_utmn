@@ -75,7 +75,9 @@ model Department {
   code         String                @unique
   name         String
   description  String?
+  competencies String[]              @default([])
   isActive     Boolean               @default(true)
+  deletedAt    DateTime?
   createdAt    DateTime              @default(now())
   updatedAt    DateTime              @updatedAt
   recipients   DepartmentRecipient[]
@@ -84,6 +86,7 @@ model Department {
   responses    Response[]
 
   @@index([isActive])
+  @@index([deletedAt])
 }
 
 model DepartmentRecipient {
@@ -92,6 +95,7 @@ model DepartmentRecipient {
   department   Department  @relation(fields: [departmentId], references: [id], onDelete: Cascade)
   email        String
   displayName  String?
+  competencies String[]    @default([])
   isActive     Boolean     @default(true)
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
@@ -223,12 +227,4 @@ model Notification {
 
   @@index([userId, isRead])
   @@index([projectId])
-}
-
-model SystemSetting {
-  id         String   @id @default(uuid())
-  key        String   @unique
-  value      String
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
 }

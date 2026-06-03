@@ -14,6 +14,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { ApproveAndSendDto } from './dto/approve-and-send.dto';
 import { CreateProjectDto } from './dto/create-project.dto';
+import { UpdateProjectSourceTextDto } from './dto/update-project-source-text.dto';
 import { UpdateSuggestionsDto } from './dto/update-suggestions.dto';
 import { ProjectsService } from './projects.service';
 
@@ -64,6 +65,15 @@ export class ProjectsController {
   @Post(':id/analyze')
   queueAnalysis(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
     return this.projectsService.queueAnalysis(id, user);
+  }
+
+  @Patch(':id/source-text')
+  updateSourceText(
+    @Param('id') id: string,
+    @Body() dto: UpdateProjectSourceTextDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.projectsService.updateSourceText(id, dto, user);
   }
 
   @Patch(':id/suggestions')

@@ -2,6 +2,10 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { AnalysisStatus, Prisma, ProjectStatus } from '@prisma/client';
 import { Queue } from 'bullmq';
+import {
+  buildDepartmentInvitationBody,
+  buildDepartmentInvitationSubject,
+} from '../common/utils/department-invitation.util';
 import { DepartmentsService } from '../departments/departments.service';
 import { LlmService } from '../llm/llm.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -23,10 +27,10 @@ export class AnalysisService {
       ANALYSIS_JOB,
       { projectId },
       {
-        attempts: 2,
-        backoff: { type: 'exponential', delay: 10_000 },
-        removeOnComplete: 100,
-        removeOnFail: 100,
+        jobId: `analysis-${projectId}`,
+        attempts: 1,
+        removeOnComplete: true,
+        removeOnFail: true,
       },
     );
   }
@@ -37,6 +41,12 @@ export class AnalysisService {
     });
     if (!project) {
       throw new NotFoundException('Проект не найден');
+    }
+    if (project.status !== ProjectStatus.QUEUED) {
+      this.logger.warn(
+        `Skip stale analysis job for ${projectId}: project status is ${project.status}`,
+      );
+      return;
     }
 
     await this.prisma.project.update({
@@ -74,7 +84,10 @@ export class AnalysisService {
         departments: departments.map((d) => ({
           code: d.code,
           name: d.name,
-          description: d.description,
+          competencies: d.competencies,
+          employeeCompetencies: [
+            ...new Set(d.recipients.flatMap((recipient) => recipient.competencies)),
+          ],
         })),
       });
 
@@ -110,8 +123,16 @@ export class AnalysisService {
             relevanceReason: suggestion.relevanceReason,
             problemFragment: suggestion.problemFragment,
             adaptedPitch: suggestion.adaptedPitch,
-            emailSubject: suggestion.emailSubject,
-            emailBody: suggestion.emailBody,
+            emailSubject: buildDepartmentInvitationSubject({
+              projectTitle: project.title,
+            }),
+            emailBody: buildDepartmentInvitationBody({
+              projectTitle: project.title,
+              departmentName: department.name,
+              relevanceReason: suggestion.relevanceReason,
+              adaptedPitch: suggestion.adaptedPitch,
+              problemFragment: suggestion.problemFragment,
+            }),
             includeInMailing: true,
           },
         });

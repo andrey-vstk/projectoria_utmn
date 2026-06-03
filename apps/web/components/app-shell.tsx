@@ -117,7 +117,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     { href: '/', label: 'Проекты' },
     { href: '/admin/users', label: 'Пользователи', adminOnly: true },
     { href: '/admin/departments', label: 'Подразделения', adminOnly: true },
-    { href: '/admin/settings', label: 'Настройки', adminOnly: true },
   ];
 
   const visibleItems = items.filter((item) => !item.adminOnly || user?.role === 'ADMIN');
@@ -214,7 +213,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </header>
       ) : null}
 
-      <div className="app-body">
+      <div className={cn('app-body', !user && 'app-body-auth')}>
         <div
           className={cn(
             'app-layout',

@@ -18,6 +18,7 @@ import { N8nService } from '../n8n/n8n.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApproveAndSendDto } from './dto/approve-and-send.dto';
 import { CreateProjectDto } from './dto/create-project.dto';
+import { UpdateProjectSourceTextDto } from './dto/update-project-source-text.dto';
 import { UpdateSuggestionsDto } from './dto/update-suggestions.dto';
 
 const LIST_INCLUDE = {
@@ -175,12 +176,31 @@ export class ProjectsService {
   async queueAnalysis(projectId: string, currentUser: JwtPayload) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { author: true },
+      include: {
+        author: true,
+        _count: {
+          select: { mailings: true },
+        },
+      },
     });
     if (!project) {
       throw new NotFoundException('Проект не найден');
     }
     this.checkProjectAccess(project.authorId, currentUser);
+    if (project._count.mailings > 0) {
+      throw new BadRequestException(
+        'Повторный анализ недоступен после начала рассылки',
+      );
+    }
+    if (
+      project.status === ProjectStatus.QUEUED ||
+      project.status === ProjectStatus.PROCESSING
+    ) {
+      if (project.status === ProjectStatus.QUEUED) {
+        await this.analysisService.enqueueAnalysis(projectId);
+      }
+      return { ok: true, alreadyQueued: true };
+    }
 
     const allowedStatuses: ProjectStatus[] = [
       ProjectStatus.DRAFT,
@@ -192,16 +212,119 @@ export class ProjectsService {
       throw new BadRequestException('Запуск анализа недоступен для текущего статуса');
     }
 
-    await this.prisma.project.update({
-      where: { id: projectId },
+    const transition = await this.prisma.project.updateMany({
+      where: {
+        id: projectId,
+        status: { in: allowedStatuses },
+      },
       data: {
         status: ProjectStatus.QUEUED,
         queuedAt: new Date(),
+        processingAt: null,
+        readyAt: null,
+        failedAt: null,
       },
     });
 
-    await this.analysisService.enqueueAnalysis(projectId);
+    if (transition.count === 0) {
+      const current = await this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { status: true },
+      });
+      if (
+        current?.status === ProjectStatus.QUEUED ||
+        current?.status === ProjectStatus.PROCESSING
+      ) {
+        return { ok: true, alreadyQueued: true };
+      }
+
+      throw new BadRequestException('Запуск анализа недоступен для текущего статуса');
+    }
+
+    try {
+      await this.analysisService.enqueueAnalysis(projectId);
+    } catch (error) {
+      await this.prisma.project.update({
+        where: { id: projectId },
+        data: {
+          status: project.status,
+          queuedAt: project.queuedAt,
+          processingAt: project.processingAt,
+          readyAt: project.readyAt,
+          failedAt: project.failedAt,
+        },
+      });
+      throw error;
+    }
+
     return { ok: true };
+  }
+
+  async updateSourceText(
+    projectId: string,
+    dto: UpdateProjectSourceTextDto,
+    currentUser: JwtPayload,
+  ) {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: {
+        _count: {
+          select: { mailings: true },
+        },
+      },
+    });
+    if (!project) {
+      throw new NotFoundException('Проект не найден');
+    }
+    this.checkProjectAccess(project.authorId, currentUser);
+    if (project._count.mailings > 0) {
+      throw new BadRequestException(
+        'Запрос нельзя изменить после начала рассылки',
+      );
+    }
+
+    const allowedStatuses: ProjectStatus[] = [
+      ProjectStatus.DRAFT,
+      ProjectStatus.READY_FOR_REVIEW,
+      ProjectStatus.FAILED,
+    ];
+    if (!allowedStatuses.includes(project.status)) {
+      throw new BadRequestException(
+        'Запрос нельзя изменить во время обработки проекта',
+      );
+    }
+
+    const sourceText = dto.sourceText.trim();
+    if (sourceText.length < 20) {
+      throw new BadRequestException(
+        'Текст запроса должен содержать не менее 20 символов',
+      );
+    }
+    if (sourceText === project.sourceText) {
+      return { ok: true, analysisReset: false };
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.analysisResult.deleteMany({
+        where: { projectId },
+      }),
+      this.prisma.project.update({
+        where: { id: projectId },
+        data: {
+          sourceText,
+          status: ProjectStatus.DRAFT,
+          queuedAt: null,
+          processingAt: null,
+          readyAt: null,
+          approvedAt: null,
+          sendingAt: null,
+          sentAt: null,
+          failedAt: null,
+        },
+      }),
+    ]);
+
+    return { ok: true, analysisReset: true };
   }
 
   async updateSuggestions(
@@ -211,7 +334,12 @@ export class ProjectsService {
   ) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { analysis: true },
+      include: {
+        analysis: true,
+        _count: {
+          select: { mailings: true },
+        },
+      },
     });
     if (!project) {
       throw new NotFoundException('Проект не найден');
@@ -219,6 +347,14 @@ export class ProjectsService {
     this.checkProjectAccess(project.authorId, currentUser);
     if (!project.analysis) {
       throw new BadRequestException('Результат анализа еще не сформирован');
+    }
+    if (
+      project._count.mailings > 0 ||
+      project.status !== ProjectStatus.READY_FOR_REVIEW
+    ) {
+      throw new BadRequestException(
+        'Рекомендации нельзя изменить после начала рассылки',
+      );
     }
 
     await this.prisma.$transaction(async (tx) => {
@@ -265,7 +401,12 @@ export class ProjectsService {
 
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { analysis: true },
+      include: {
+        analysis: true,
+        _count: {
+          select: { mailings: true },
+        },
+      },
     });
     if (!project) {
       throw new NotFoundException('Проект не найден');
@@ -273,6 +414,12 @@ export class ProjectsService {
     this.checkProjectAccess(project.authorId, currentUser);
     if (!project.analysis) {
       throw new BadRequestException('Нет данных анализа');
+    }
+    if (
+      project._count.mailings > 0 ||
+      project.status !== ProjectStatus.READY_FOR_REVIEW
+    ) {
+      throw new BadRequestException('Рассылка уже была подтверждена');
     }
 
     await this.prisma.project.update({

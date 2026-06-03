@@ -168,6 +168,9 @@ export default function ProjectDetailPage() {
   const [drafts, setDrafts] = useState<Record<string, SuggestionDraft>>({});
   const [recipientInputs, setRecipientInputs] = useState<Record<string, string>>({});
   const [recipientErrors, setRecipientErrors] = useState<Record<string, string>>({});
+  const [sourceTextDraft, setSourceTextDraft] = useState('');
+  const [editingSourceText, setEditingSourceText] = useState(false);
+  const [savingSourceText, setSavingSourceText] = useState(false);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [analysisNow, setAnalysisNow] = useState(() => Date.now());
@@ -214,6 +217,7 @@ export default function ProjectDetailPage() {
         const map = buildDraftMap(data);
         skipNextAutosaveRef.current = true;
         setDrafts(map);
+        setSourceTextDraft(data.sourceText);
         setRecipientInputs({});
         setRecipientErrors({});
         if (data.analysis?.suggestions) {
@@ -271,6 +275,14 @@ export default function ProjectDetailPage() {
     return project.status === 'QUEUED' || project.status === 'PROCESSING';
   }, [project]);
 
+  const suggestionsLocked = useMemo(() => {
+    if (!project) return false;
+    return (
+      project.mailings.length > 0 ||
+      ['APPROVED', 'SENDING', 'SENT'].includes(project.status)
+    );
+  }, [project]);
+
   const analysisStartedAt = useMemo(
     () => toTimestamp(project?.queuedAt ?? project?.processingAt),
     [project],
@@ -322,12 +334,23 @@ export default function ProjectDetailPage() {
 
   const canRunAnalysis = useMemo(() => {
     if (!project) return false;
-    return ['DRAFT', 'FAILED', 'READY_FOR_REVIEW'].includes(project.status);
+    return (
+      project.mailings.length === 0 &&
+      ['DRAFT', 'FAILED', 'READY_FOR_REVIEW'].includes(project.status)
+    );
   }, [project]);
 
   const canApproveAndSend = useMemo(() => {
     if (!project) return false;
-    return ['READY_FOR_REVIEW', 'APPROVED'].includes(project.status);
+    return !suggestionsLocked && project.status === 'READY_FOR_REVIEW';
+  }, [project, suggestionsLocked]);
+
+  const canEditSourceText = useMemo(() => {
+    if (!project) return false;
+    return (
+      project.mailings.length === 0 &&
+      ['DRAFT', 'FAILED', 'READY_FOR_REVIEW'].includes(project.status)
+    );
   }, [project]);
 
   const hasSuccessfulAnalysis = useMemo(
@@ -435,6 +458,52 @@ export default function ProjectDetailPage() {
     [createSuggestionDraft],
   );
 
+  const startEditingSourceText = () => {
+    if (!project) return;
+    setSourceTextDraft(project.sourceText);
+    setEditingSourceText(true);
+  };
+
+  const cancelEditingSourceText = () => {
+    if (!project) return;
+    setSourceTextDraft(project.sourceText);
+    setEditingSourceText(false);
+  };
+
+  const saveSourceText = async () => {
+    if (!project) return;
+
+    const sourceText = sourceTextDraft.trim();
+    if (sourceText.length < 20) {
+      setError('Текст запроса должен содержать не менее 20 символов');
+      return;
+    }
+    if (sourceText === project.sourceText) {
+      setEditingSourceText(false);
+      return;
+    }
+
+    if (autoSaveTimerRef.current !== null) {
+      window.clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+
+    setSavingSourceText(true);
+    setError(null);
+    try {
+      await apiRequest(`/projects/${projectId}/source-text`, {
+        method: 'PATCH',
+        body: JSON.stringify({ sourceText }),
+      });
+      setEditingSourceText(false);
+      await loadProject();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSavingSourceText(false);
+    }
+  };
+
   const runAnalysis = async () => {
     setProcessing(true);
     setError(null);
@@ -450,6 +519,11 @@ export default function ProjectDetailPage() {
 
   const approveAndSend = async () => {
     if (!project?.analysis) return;
+
+    if (autoSaveTimerRef.current !== null) {
+      window.clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
 
     setProcessing(true);
     setError(null);
@@ -477,7 +551,7 @@ export default function ProjectDetailPage() {
   }, []);
 
   useEffect(() => {
-    if (!project?.analysis) {
+    if (!project?.analysis || suggestionsLocked) {
       return;
     }
 
@@ -509,7 +583,7 @@ export default function ProjectDetailPage() {
         setError((e as Error).message);
       }
     }, 700);
-  }, [drafts, project, projectId]);
+  }, [drafts, project, projectId, suggestionsLocked]);
 
   const resizeTextarea = useCallback((el: HTMLTextAreaElement | null) => {
     if (!el) return;
@@ -518,7 +592,7 @@ export default function ProjectDetailPage() {
   }, []);
 
   useEffect(() => {
-    if (!project?.analysis) {
+    if (!project?.analysis && !editingSourceText) {
       return;
     }
 
@@ -531,7 +605,7 @@ export default function ProjectDetailPage() {
     return () => {
       window.cancelAnimationFrame(rafId);
     };
-  }, [drafts, project?.analysis, resizeTextarea]);
+  }, [drafts, editingSourceText, project?.analysis, resizeTextarea]);
 
   return (
     <ProtectedPage>
@@ -562,10 +636,58 @@ export default function ProjectDetailPage() {
               <div className="section-head">
                 <div>
                   <h3 className="section-title">Исходный текст</h3>
-                  <p className="section-subtitle">Содержимое запроса заказчика без изменений.</p>
+                  <p className="section-subtitle">
+                    {editingSourceText
+                      ? 'После сохранения потребуется запустить анализ заново.'
+                      : 'Содержимое запроса заказчика.'}
+                  </p>
                 </div>
+                {editingSourceText ? (
+                  <div className="section-actions">
+                    <Button
+                      variant="secondary"
+                      onClick={cancelEditingSourceText}
+                      disabled={savingSourceText}
+                    >
+                      Отмена
+                    </Button>
+                    <Button
+                      onClick={saveSourceText}
+                      disabled={
+                        savingSourceText ||
+                        sourceTextDraft.trim().length < 20 ||
+                        sourceTextDraft.trim() === project.sourceText
+                      }
+                    >
+                      {savingSourceText ? 'Сохраняем...' : 'Сохранить изменения'}
+                    </Button>
+                  </div>
+                ) : canEditSourceText ? (
+                  <Button variant="secondary" onClick={startEditingSourceText}>
+                    Редактировать запрос
+                  </Button>
+                ) : null}
               </div>
-              <p className="muted text-prewrap">{project.sourceText}</p>
+              {editingSourceText ? (
+                <div className="source-text-editor">
+                  <Textarea
+                    value={sourceTextDraft}
+                    className="auto-textarea source-text-textarea"
+                    onInput={(e) =>
+                      resizeTextarea(e.currentTarget as HTMLTextAreaElement)
+                    }
+                    onChange={(e) => setSourceTextDraft(e.target.value)}
+                  />
+                  {project.analysis ? (
+                    <p className="source-text-reset-notice">
+                      Сохранение удалит текущую сводку, декомпозицию задач и рекомендации
+                      по подразделениям.
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="muted text-prewrap">{project.sourceText}</p>
+              )}
             </Card>
 
             <Card>
@@ -644,14 +766,21 @@ export default function ProjectDetailPage() {
                   <div>
                     <h3 className="section-title">Рекомендации по подразделениям</h3>
                     <p className="section-subtitle">
-                      Отредактируйте письма и выберите подразделения перед рассылкой.
+                      {suggestionsLocked
+                        ? 'Сообщения зафиксированы после подтверждения рассылки.'
+                        : 'Отредактируйте письма и выберите подразделения перед рассылкой.'}
                     </p>
                   </div>
-                  <div className="section-actions">
-                    <Button onClick={approveAndSend} disabled={!canApproveAndSend || processing}>
-                      {processing ? 'Отправка...' : 'Подтвердить и разослать'}
-                    </Button>
-                  </div>
+                  {!suggestionsLocked ? (
+                    <div className="section-actions">
+                      <Button
+                        onClick={approveAndSend}
+                        disabled={!canApproveAndSend || processing}
+                      >
+                        {processing ? 'Отправка...' : 'Подтвердить и разослать'}
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="stack-md">
@@ -688,32 +817,40 @@ export default function ProjectDetailPage() {
                               tone={isEnabled ? 'info' : 'neutral'}
                               className="suggestion-send-badge"
                             >
-                              {isEnabled ? 'В рассылке' : 'Отключено'}
+                              {isEnabled
+                                ? 'В рассылке'
+                                : suggestionsLocked
+                                  ? 'Не отправлено'
+                                  : 'Отключено'}
                             </Badge>
-                            <label className="suggestion-toggle">
-                              <input
-                                type="checkbox"
-                                checked={isEnabled}
-                                onChange={(e) =>
-                                  updateSuggestionDraft(item, {
-                                    includeInMailing: e.target.checked,
-                                  })
-                                }
-                              />
-                              <span className="suggestion-toggle-track">
-                                <span className="suggestion-toggle-thumb" />
-                              </span>
-                              <span className="suggestion-toggle-text">
-                                {isEnabled ? 'Отправлять' : 'Не отправлять'}
-                              </span>
-                            </label>
+                            {!suggestionsLocked ? (
+                              <label className="suggestion-toggle">
+                                <input
+                                  type="checkbox"
+                                  checked={isEnabled}
+                                  onChange={(e) =>
+                                    updateSuggestionDraft(item, {
+                                      includeInMailing: e.target.checked,
+                                    })
+                                  }
+                                />
+                                <span className="suggestion-toggle-track">
+                                  <span className="suggestion-toggle-thumb" />
+                                </span>
+                                <span className="suggestion-toggle-text">
+                                  {isEnabled ? 'Отправлять' : 'Не отправлять'}
+                                </span>
+                              </label>
+                            ) : null}
                           </div>
                         </div>
 
                         <div
                           className={cn(
                             'suggestion-card-grid',
-                            !isEnabled && 'suggestion-content-disabled',
+                            !isEnabled &&
+                              !suggestionsLocked &&
+                              'suggestion-content-disabled',
                           )}
                         >
                           <div className="suggestion-context">
@@ -732,105 +869,137 @@ export default function ProjectDetailPage() {
                           <div className="suggestion-compose">
                             <div className="field mail-field mail-field-recipients">
                               <label className="label mail-field-label">Адресаты</label>
-                              <div className="suggestion-recipient-list suggestion-recipient-list-edit">
+                              <div
+                                className={cn(
+                                  'suggestion-recipient-list',
+                                  !suggestionsLocked && 'suggestion-recipient-list-edit',
+                                )}
+                              >
                                 {recipients.length > 0 ? (
-                                  recipients.map((recipient) => (
-                                    <button
-                                      key={`${item.id}-${recipient}`}
-                                      type="button"
-                                      className="suggestion-recipient-pill suggestion-recipient-pill-edit"
-                                      onClick={() => removeRecipient(item, recipient)}
-                                      disabled={!isEnabled}
-                                      aria-label={`Удалить адрес ${recipient}`}
-                                    >
-                                      <span>{recipient}</span>
-                                      <span className="suggestion-recipient-pill-remove">×</span>
-                                    </button>
-                                  ))
+                                  recipients.map((recipient) =>
+                                    suggestionsLocked ? (
+                                      <span
+                                        key={`${item.id}-${recipient}`}
+                                        className="suggestion-recipient-pill"
+                                      >
+                                        {recipient}
+                                      </span>
+                                    ) : (
+                                      <button
+                                        key={`${item.id}-${recipient}`}
+                                        type="button"
+                                        className="suggestion-recipient-pill suggestion-recipient-pill-edit"
+                                        onClick={() => removeRecipient(item, recipient)}
+                                        disabled={!isEnabled}
+                                        aria-label={`Удалить адрес ${recipient}`}
+                                      >
+                                        <span>{recipient}</span>
+                                        <span className="suggestion-recipient-pill-remove">×</span>
+                                      </button>
+                                    ),
+                                  )
                                 ) : (
                                   <p className="muted suggestion-recipient-empty">
-                                    Добавьте адресатов для рассылки
+                                    {suggestionsLocked
+                                      ? 'Адресаты не выбраны'
+                                      : 'Добавьте адресатов для рассылки'}
                                   </p>
                                 )}
                               </div>
-                              <div className="suggestion-recipient-controls">
-                                <input
-                                  type="text"
-                                  className="input suggestion-recipient-input"
-                                  placeholder="name@company.ru, second@company.ru"
-                                  value={recipientInput}
-                                  disabled={!isEnabled}
-                                  onChange={(e) => {
-                                    const value = e.target.value;
-                                    setRecipientInputs((prev) => ({
-                                      ...prev,
-                                      [item.id]: value,
-                                    }));
-                                    setRecipientErrors((prev) => {
-                                      if (!prev[item.id]) {
-                                        return prev;
-                                      }
-                                      const next = { ...prev };
-                                      delete next[item.id];
-                                      return next;
-                                    });
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key !== 'Enter') {
-                                      return;
-                                    }
-                                    e.preventDefault();
-                                    addRecipients(item);
-                                  }}
-                                />
-                                <Button
-                                  variant="secondary"
-                                  className="suggestion-recipient-add"
-                                  onClick={() => addRecipients(item)}
-                                  disabled={!isEnabled}
-                                >
-                                  Добавить
-                                </Button>
-                              </div>
-                              {recipientErrors[item.id] ? (
-                                <p className="danger suggestion-recipient-error">
-                                  {recipientErrors[item.id]}
-                                </p>
+                              {!suggestionsLocked ? (
+                                <>
+                                  <div className="suggestion-recipient-controls">
+                                    <input
+                                      type="text"
+                                      className="input suggestion-recipient-input"
+                                      placeholder="name@company.ru, second@company.ru"
+                                      value={recipientInput}
+                                      disabled={!isEnabled}
+                                      onChange={(e) => {
+                                        const value = e.target.value;
+                                        setRecipientInputs((prev) => ({
+                                          ...prev,
+                                          [item.id]: value,
+                                        }));
+                                        setRecipientErrors((prev) => {
+                                          if (!prev[item.id]) {
+                                            return prev;
+                                          }
+                                          const next = { ...prev };
+                                          delete next[item.id];
+                                          return next;
+                                        });
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (e.key !== 'Enter') {
+                                          return;
+                                        }
+                                        e.preventDefault();
+                                        addRecipients(item);
+                                      }}
+                                    />
+                                    <Button
+                                      variant="secondary"
+                                      className="suggestion-recipient-add"
+                                      onClick={() => addRecipients(item)}
+                                      disabled={!isEnabled}
+                                    >
+                                      Добавить
+                                    </Button>
+                                  </div>
+                                  {recipientErrors[item.id] ? (
+                                    <p className="danger suggestion-recipient-error">
+                                      {recipientErrors[item.id]}
+                                    </p>
+                                  ) : null}
+                                </>
                               ) : null}
                             </div>
 
                             <div className="field mail-field mail-field-subject">
                               <label className="label mail-field-label">Тема письма</label>
-                              <Textarea
-                                value={drafts[item.id]?.customSubject ?? item.emailSubject}
-                                className="auto-textarea"
-                                disabled={!isEnabled}
-                                onInput={(e) =>
-                                  resizeTextarea(e.currentTarget as HTMLTextAreaElement)
-                                }
-                                onChange={(e) =>
-                                  updateSuggestionDraft(item, {
-                                    customSubject: e.target.value,
-                                  })
-                                }
-                              />
+                              {suggestionsLocked ? (
+                                <p className="mail-field-static-text">
+                                  {drafts[item.id]?.customSubject ?? item.emailSubject}
+                                </p>
+                              ) : (
+                                <Textarea
+                                  value={drafts[item.id]?.customSubject ?? item.emailSubject}
+                                  className="auto-textarea"
+                                  disabled={!isEnabled}
+                                  onInput={(e) =>
+                                    resizeTextarea(e.currentTarget as HTMLTextAreaElement)
+                                  }
+                                  onChange={(e) =>
+                                    updateSuggestionDraft(item, {
+                                      customSubject: e.target.value,
+                                    })
+                                  }
+                                />
+                              )}
                             </div>
 
                             <div className="field mail-field mail-field-body">
                               <label className="label mail-field-label">Текст письма</label>
-                              <Textarea
-                                value={drafts[item.id]?.customBody ?? item.emailBody}
-                                className="auto-textarea"
-                                disabled={!isEnabled}
-                                onInput={(e) =>
-                                  resizeTextarea(e.currentTarget as HTMLTextAreaElement)
-                                }
-                                onChange={(e) =>
-                                  updateSuggestionDraft(item, {
-                                    customBody: e.target.value,
-                                  })
-                                }
-                              />
+                              {suggestionsLocked ? (
+                                <p className="mail-field-static-text text-prewrap">
+                                  {drafts[item.id]?.customBody ?? item.emailBody}
+                                </p>
+                              ) : (
+                                <Textarea
+                                  value={drafts[item.id]?.customBody ?? item.emailBody}
+                                  className="auto-textarea"
+                                  disabled={!isEnabled}
+                                  onInput={(e) =>
+                                    resizeTextarea(e.currentTarget as HTMLTextAreaElement)
+                                  }
+                                  onChange={(e) =>
+                                    updateSuggestionDraft(item, {
+                                      customBody: e.target.value,
+                                    })
+                                  }
+                                />
+                              )}
                             </div>
                           </div>
                         </div>

@@ -24,6 +24,12 @@ export class CreateDepartmentDto {
   @IsString()
   description?: string;
 
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(80, { each: true })
+  competencies?: string[];
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => DepartmentRecipientDto)

@@ -77,14 +77,13 @@
 
 Сущности:
 - `User` (аккаунт, роль, статус)
-- `Department` + `DepartmentRecipient`
+- `Department` + `DepartmentRecipient` (компетенции подразделений и сотрудников)
 - `Project` (основной объект запроса)
 - `AnalysisResult`
 - `DepartmentSuggestion`
 - `Mailing`
 - `Response`
 - `Notification`
-- `SystemSetting`
 
 Основные enum:
 - `Role`: `ADMIN | INITIATOR`
@@ -142,10 +141,6 @@
 - `GET /notifications`
 - `PATCH /notifications/:id/read`
 
-### System settings (admin)
-- `GET /system-settings`
-- `POST /system-settings`
-
 ### Публичные отклики
 - `GET /public/respond/:token` (HTML fallback)
 - `GET /public/responses/:token/status`
@@ -202,7 +197,6 @@
 - `/projects/[id]/responses` — отклики
 - `/admin/users` — пользователи
 - `/admin/departments` — подразделения
-- `/admin/settings` — системные настройки
 - `/respond/[token]` — публичный отклик
 
 Дизайн-система:

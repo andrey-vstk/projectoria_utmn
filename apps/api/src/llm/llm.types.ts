@@ -27,6 +27,7 @@ export interface LlmAnalysisInput {
   departments: Array<{
     code: string;
     name: string;
-    description?: string | null;
+    competencies: string[];
+    employeeCompetencies: string[];
   }>;
 }

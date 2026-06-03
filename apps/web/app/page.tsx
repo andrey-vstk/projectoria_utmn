@@ -188,90 +188,79 @@ export default function HomePage() {
           </div>
         ) : null}
 
-        <Card className="card-soft">
-          <div className="section-head">
-            <div>
-              <h3 className="section-title">Реестр проектов</h3>
-              <p className="section-subtitle">
-                Открывайте карточку проекта для запуска анализа, правки писем и рассылки.
-              </p>
-            </div>
-          </div>
+        {error ? <p className="message-danger">{error}</p> : null}
+        {loading ? (
+          <p className="muted">Загрузка...</p>
+        ) : (
+          <div className="projects-table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Проект</th>
+                  <th className="projects-status-col">Статус</th>
+                  <th>Автор</th>
+                  <th>Рассылки</th>
+                  <th>Отклики</th>
+                  <th>Создан</th>
+                </tr>
+              </thead>
+              <tbody>
+                {projects.map((project) => {
+                  const isActive = ACTIVE_PROJECT_STATUSES.has(project.status);
+                  const startedAt = getProcessingStart(project);
+                  const elapsedLabel =
+                    startedAt && startedAt <= statusNow
+                      ? formatDuration(statusNow - startedAt)
+                      : '...';
+                  const progressCaption = getProgressCaption(project.status);
 
-          {error ? <p className="message-danger">{error}</p> : null}
-          {loading ? (
-            <p className="muted">Загрузка...</p>
-          ) : (
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Проект</th>
-                    <th className="projects-status-col">Статус</th>
-                    <th>Автор</th>
-                    <th>Рассылки</th>
-                    <th>Отклики</th>
-                    <th>Создан</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {projects.map((project) => {
-                    const isActive = ACTIVE_PROJECT_STATUSES.has(project.status);
-                    const startedAt = getProcessingStart(project);
-                    const elapsedLabel =
-                      startedAt && startedAt <= statusNow
-                        ? formatDuration(statusNow - startedAt)
-                        : '...';
-                    const progressCaption = getProgressCaption(project.status);
-
-                    return (
-                      <tr key={project.id}>
-                        <td>
-                          <Link href={`/projects/${project.id}`} className="table-link">
-                            {project.title}
-                          </Link>
-                          {project.analysis?.summary ? (
-                            <p className="muted" style={{ margin: '6px 0 0' }}>
-                              {project.analysis.summary.slice(0, 135)}
-                              {project.analysis.summary.length > 135 ? '...' : ''}
-                            </p>
-                          ) : null}
-                        </td>
-                        <td className="projects-status-col">
-                          <div className="project-status-cell">
-                            <ProjectStatusBadge
-                              status={project.status}
-                              className="project-status-badge-fixed"
-                            />
-                            {isActive ? (
-                              <div className="project-status-meta">
-                                <span className="project-status-spinner" aria-hidden />
-                                <span className="project-status-time">
-                                  {progressCaption}: {elapsedLabel}
-                                </span>
-                              </div>
-                            ) : null}
-                          </div>
-                        </td>
-                        <td>{project.author.fullName}</td>
-                        <td>{project._count.mailings}</td>
-                        <td>{project._count.responses}</td>
-                        <td>{new Date(project.createdAt).toLocaleString('ru-RU')}</td>
-                      </tr>
-                    );
-                  })}
-                  {projects.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="muted">
-                        Проекты не найдены.
+                  return (
+                    <tr key={project.id}>
+                      <td>
+                        <Link href={`/projects/${project.id}`} className="table-link">
+                          {project.title}
+                        </Link>
+                        {project.analysis?.summary ? (
+                          <p className="muted" style={{ margin: '6px 0 0' }}>
+                            {project.analysis.summary.slice(0, 135)}
+                            {project.analysis.summary.length > 135 ? '...' : ''}
+                          </p>
+                        ) : null}
                       </td>
+                      <td className="projects-status-col">
+                        <div className="project-status-cell">
+                          <ProjectStatusBadge
+                            status={project.status}
+                            className="project-status-badge-fixed"
+                          />
+                          {isActive ? (
+                            <div className="project-status-meta">
+                              <span className="project-status-spinner" aria-hidden />
+                              <span className="project-status-time">
+                                {progressCaption}: {elapsedLabel}
+                              </span>
+                            </div>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td>{project.author.fullName}</td>
+                      <td>{project._count.mailings}</td>
+                      <td>{project._count.responses}</td>
+                      <td>{new Date(project.createdAt).toLocaleString('ru-RU')}</td>
                     </tr>
-                  ) : null}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
+                  );
+                })}
+                {projects.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="muted">
+                      Проекты не найдены.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </ProtectedPage>
   );

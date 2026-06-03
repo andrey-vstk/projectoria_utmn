@@ -7,25 +7,108 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { apiRequest } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
+import { cn } from '@/lib/cn';
 import { USER_STATUS_LABELS } from '@/lib/status';
+
+type UserRole = 'ADMIN' | 'INITIATOR';
+type UserStatus = 'ACTIVE' | 'DISABLED';
 
 interface UserItem {
   id: string;
   email: string;
   fullName: string;
-  role: 'ADMIN' | 'INITIATOR';
-  status: 'ACTIVE' | 'DISABLED';
+  role: UserRole;
+  status: UserStatus;
+}
+
+interface ToggleOption<T extends string> {
+  value: T;
+  label: string;
+}
+
+interface AdminToggleProps<T extends string> {
+  value: T;
+  options: Array<ToggleOption<T>>;
+  onChange: (value: T) => void;
+  ariaLabel: string;
+  className?: string;
+}
+
+const ROLE_OPTIONS: Array<ToggleOption<UserRole>> = [
+  {
+    value: 'INITIATOR',
+    label: 'Инициатор',
+  },
+  {
+    value: 'ADMIN',
+    label: 'Админ',
+  },
+];
+
+const STATUS_OPTIONS: Array<ToggleOption<UserStatus>> = [
+  {
+    value: 'ACTIVE',
+    label: USER_STATUS_LABELS.ACTIVE,
+  },
+  {
+    value: 'DISABLED',
+    label: USER_STATUS_LABELS.DISABLED,
+  },
+];
+
+function AdminToggle<T extends string>({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+  className,
+}: AdminToggleProps<T>) {
+  const activeIndex = Math.max(
+    0,
+    options.findIndex((option) => option.value === value),
+  );
+
+  return (
+    <div
+      className={cn('admin-toggle', activeIndex === 1 && 'admin-toggle-second', className)}
+      data-value={value}
+      role="radiogroup"
+      aria-label={ariaLabel}
+    >
+      <span className="admin-toggle-thumb" aria-hidden />
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          role="radio"
+          aria-checked={option.value === value}
+          className={cn(
+            'admin-toggle-option',
+            option.value === value && 'admin-toggle-option-active',
+          )}
+          onClick={() => onChange(option.value)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 export default function AdminUsersPage() {
+  const { user: currentUser, refresh } = useAuth();
   const [users, setUsers] = useState<UserItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [passwordDrafts, setPasswordDrafts] = useState<Record<string, string>>({});
 
   const [email, setEmail] = useState('');
   const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'ADMIN' | 'INITIATOR'>('INITIATOR');
+  const [role, setRole] = useState<UserRole>('INITIATOR');
+  const [status, setStatus] = useState<UserStatus>('ACTIVE');
 
   const load = async () => {
     setLoading(true);
@@ -36,6 +119,7 @@ export default function AdminUsersPage() {
         withCsrf: false,
       });
       setUsers(data);
+      setPasswordDrafts({});
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -58,31 +142,56 @@ export default function AdminUsersPage() {
           fullName,
           password,
           role,
+          status,
         }),
       });
       setEmail('');
       setFullName('');
       setPassword('');
       setRole('INITIATOR');
+      setStatus('ACTIVE');
       await load();
     } catch (e) {
       setError((e as Error).message);
     }
   };
 
+  const patchUser = <K extends keyof UserItem>(userId: string, field: K, value: UserItem[K]) => {
+    setUsers((prev) =>
+      prev.map((user) => (user.id === userId ? { ...user, [field]: value } : user)),
+    );
+  };
+
+  const setUserPasswordDraft = (userId: string, value: string) => {
+    setPasswordDrafts((prev) => ({
+      ...prev,
+      [userId]: value,
+    }));
+  };
+
   const updateUser = async (user: UserItem) => {
+    setSavingId(user.id);
     setError(null);
     try {
+      const passwordDraft = passwordDrafts[user.id] ?? '';
       await apiRequest(`/users/${user.id}`, {
         method: 'PATCH',
         body: JSON.stringify({
+          email: user.email,
+          fullName: user.fullName,
           role: user.role,
           status: user.status,
+          ...(passwordDraft.trim() ? { password: passwordDraft } : {}),
         }),
       });
       await load();
+      if (currentUser?.id === user.id) {
+        await refresh();
+      }
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setSavingId(null);
     }
   };
 
@@ -93,20 +202,20 @@ export default function AdminUsersPage() {
           <div>
             <h1 className="page-title">Админка: пользователи</h1>
             <p className="page-subtitle">
-              Создание аккаунтов, смена роли и отключение доступа сотрудников.
+              Создание аккаунтов, редактирование данных и управление доступом сотрудников.
             </p>
           </div>
         </div>
 
         <AdminOnly>
-          <Card className="card-soft">
+          <Card className="card-soft admin-users-create-card">
             <div className="section-head">
               <div>
                 <h3 className="section-title">Создать пользователя</h3>
               </div>
             </div>
 
-            <form onSubmit={createUser} className="grid-3">
+            <form onSubmit={createUser} className="admin-users-create-grid">
               <div className="field">
                 <label className="label">Email</label>
                 <Input
@@ -125,28 +234,38 @@ export default function AdminUsersPage() {
                 <Input
                   type="password"
                   value={password}
+                  minLength={8}
                   onChange={(e) => setPassword(e.target.value)}
                   required
                 />
               </div>
               <div className="field">
                 <label className="label">Роль</label>
-                <select
-                  className="input"
+                <AdminToggle
                   value={role}
-                  onChange={(e) => setRole(e.target.value as 'ADMIN' | 'INITIATOR')}
-                >
-                  <option value="INITIATOR">Инициатор</option>
-                  <option value="ADMIN">Администратор</option>
-                </select>
+                  options={ROLE_OPTIONS}
+                  onChange={setRole}
+                  ariaLabel="Выбор роли нового пользователя"
+                  className="admin-toggle-form"
+                />
               </div>
-              <div style={{ alignSelf: 'end' }}>
+              <div className="field">
+                <label className="label">Статус</label>
+                <AdminToggle
+                  value={status}
+                  options={STATUS_OPTIONS}
+                  onChange={setStatus}
+                  ariaLabel="Выбор статуса нового пользователя"
+                  className="admin-toggle-form"
+                />
+              </div>
+              <div className="admin-users-create-action">
                 <Button type="submit">Добавить</Button>
               </div>
             </form>
           </Card>
 
-          <Card>
+          <section className="admin-users-list">
             <div className="section-head">
               <div>
                 <h3 className="section-title">Список пользователей</h3>
@@ -157,68 +276,88 @@ export default function AdminUsersPage() {
             {error ? <p className="message-danger">{error}</p> : null}
 
             {!loading ? (
-              <div className="table-wrap">
-                <table>
+              <div className="table-wrap admin-users-table-wrap">
+                <table className="admin-users-table">
                   <thead>
                     <tr>
                       <th>Email</th>
                       <th>ФИО</th>
+                      <th>Новый пароль</th>
                       <th>Роль</th>
                       <th>Статус</th>
                       <th />
                     </tr>
                   </thead>
                   <tbody>
-                    {users.map((user) => (
-                      <tr key={user.id}>
-                        <td>{user.email}</td>
-                        <td>{user.fullName}</td>
-                        <td>
-                          <select
-                            className="input"
-                            value={user.role}
-                            onChange={(e) =>
-                              setUsers((prev) =>
-                                prev.map((u) =>
-                                  u.id === user.id
-                                    ? { ...u, role: e.target.value as UserItem['role'] }
-                                    : u,
-                                ),
-                              )
-                            }
-                          >
-                            <option value="INITIATOR">Инициатор</option>
-                            <option value="ADMIN">Администратор</option>
-                          </select>
-                        </td>
-                        <td>
-                          <select
-                            className="input"
-                            value={user.status}
-                            onChange={(e) =>
-                              setUsers((prev) =>
-                                prev.map((u) =>
-                                  u.id === user.id
-                                    ? { ...u, status: e.target.value as UserItem['status'] }
-                                    : u,
-                                ),
-                              )
-                            }
-                          >
-                            <option value="ACTIVE">{USER_STATUS_LABELS.ACTIVE}</option>
-                            <option value="DISABLED">{USER_STATUS_LABELS.DISABLED}</option>
-                          </select>
-                        </td>
-                        <td>
-                          <Button variant="secondary" onClick={() => void updateUser(user)}>
-                            Сохранить
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
+                    {users.map((user) => {
+                      const isSaving = savingId === user.id;
+
+                      return (
+                        <tr key={user.id}>
+                          <td>
+                            <Input
+                              type="email"
+                              className="admin-user-input"
+                              value={user.email}
+                              onChange={(event) =>
+                                patchUser(user.id, 'email', event.target.value)
+                              }
+                            />
+                          </td>
+                          <td>
+                            <Input
+                              className="admin-user-input"
+                              value={user.fullName}
+                              onChange={(event) =>
+                                patchUser(user.id, 'fullName', event.target.value)
+                              }
+                            />
+                          </td>
+                          <td>
+                            <Input
+                              type="password"
+                              className="admin-user-input admin-user-password"
+                              minLength={8}
+                              placeholder="Не менять"
+                              value={passwordDrafts[user.id] ?? ''}
+                              onChange={(event) =>
+                                setUserPasswordDraft(user.id, event.target.value)
+                              }
+                            />
+                          </td>
+                          <td>
+                            <AdminToggle
+                              value={user.role}
+                              options={ROLE_OPTIONS}
+                              onChange={(value) => patchUser(user.id, 'role', value)}
+                              ariaLabel={`Выбор роли пользователя ${user.email}`}
+                              className="admin-toggle-compact"
+                            />
+                          </td>
+                          <td>
+                            <AdminToggle
+                              value={user.status}
+                              options={STATUS_OPTIONS}
+                              onChange={(value) => patchUser(user.id, 'status', value)}
+                              ariaLabel={`Выбор статуса пользователя ${user.email}`}
+                              className="admin-toggle-compact"
+                            />
+                          </td>
+                          <td>
+                            <Button
+                              variant="secondary"
+                              disabled={isSaving}
+                              onClick={() => void updateUser(user)}
+                            >
+                              {isSaving ? 'Сохраняем...' : 'Сохранить'}
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                     {users.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="muted">
+                        <td colSpan={6} className="muted">
                           Пользователи не найдены.
                         </td>
                       </tr>
@@ -227,7 +366,7 @@ export default function AdminUsersPage() {
                 </table>
               </div>
             ) : null}
-          </Card>
+          </section>
         </AdminOnly>
       </div>
     </ProtectedPage>

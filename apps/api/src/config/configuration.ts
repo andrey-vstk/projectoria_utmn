@@ -38,7 +38,7 @@ export default () => ({
     webhookUrl: process.env.N8N_WEBHOOK_URL ?? '',
     emailWorkflowUrl: process.env.N8N_EMAIL_WORKFLOW_URL ?? '',
     llmWebhookUrl: process.env.N8N_LLM_WEBHOOK_URL ?? '',
-    llmTimeoutMs: Number(process.env.N8N_LLM_TIMEOUT_MS ?? 120000),
+    llmTimeoutMs: Number(process.env.N8N_LLM_TIMEOUT_MS ?? 900000),
   },
   throttle: {
     ttl: Number(process.env.THROTTLE_TTL ?? 60),

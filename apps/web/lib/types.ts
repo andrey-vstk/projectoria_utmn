@@ -29,6 +29,7 @@ export interface ProjectListItem {
 export interface DepartmentRecipient {
   email: string;
   displayName?: string | null;
+  competencies?: string[];
 }
 
 export interface ProjectSuggestion {

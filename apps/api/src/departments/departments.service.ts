@@ -13,6 +13,7 @@ const DEPARTMENT_INCLUDE = {
       id: true,
       email: true,
       displayName: true,
+      competencies: true,
       isActive: true,
     },
   },
@@ -24,6 +25,7 @@ export class DepartmentsService {
 
   listAll() {
     return this.prisma.department.findMany({
+      where: { deletedAt: null },
       include: DEPARTMENT_INCLUDE,
       orderBy: { createdAt: 'asc' },
     });
@@ -31,7 +33,7 @@ export class DepartmentsService {
 
   listActive() {
     return this.prisma.department.findMany({
-      where: { isActive: true },
+      where: { isActive: true, deletedAt: null },
       include: DEPARTMENT_INCLUDE,
       orderBy: { name: 'asc' },
     });
@@ -46,6 +48,7 @@ export class DepartmentsService {
         code,
         name: dto.name.trim(),
         description: dto.description?.trim(),
+        competencies: this.normalizeCompetencies(dto.competencies),
         recipients: {
           createMany: {
             data: recipients,
@@ -57,7 +60,9 @@ export class DepartmentsService {
   }
 
   async update(id: string, dto: UpdateDepartmentDto) {
-    const department = await this.prisma.department.findUnique({ where: { id } });
+    const department = await this.prisma.department.findFirst({
+      where: { id, deletedAt: null },
+    });
     if (!department) {
       throw new NotFoundException('Подразделение не найдено');
     }
@@ -77,7 +82,11 @@ export class DepartmentsService {
           if (existing) {
             await tx.departmentRecipient.update({
               where: { id: existing.id },
-              data: { isActive: true, displayName: recipient.displayName },
+              data: {
+                isActive: true,
+                displayName: recipient.displayName,
+                competencies: recipient.competencies,
+              },
             });
             continue;
           }
@@ -97,6 +106,10 @@ export class DepartmentsService {
         data: {
           name: dto.name?.trim(),
           description: dto.description?.trim(),
+          competencies:
+            dto.competencies === undefined
+              ? undefined
+              : this.normalizeCompetencies(dto.competencies),
           isActive: dto.isActive,
         },
         include: DEPARTMENT_INCLUDE,
@@ -105,7 +118,9 @@ export class DepartmentsService {
   }
 
   async softDelete(id: string) {
-    const department = await this.prisma.department.findUnique({ where: { id } });
+    const department = await this.prisma.department.findFirst({
+      where: { id, deletedAt: null },
+    });
     if (!department) {
       throw new NotFoundException('Подразделение не найдено');
     }
@@ -118,13 +133,20 @@ export class DepartmentsService {
 
       return tx.department.update({
         where: { id },
-        data: { isActive: false },
+        data: { isActive: false, deletedAt: new Date() },
       });
     });
   }
 
   private normalizeRecipients(recipients: DepartmentRecipientDto[]) {
-    const normalized = new Map<string, { email: string; displayName: string | null }>();
+    const normalized = new Map<
+      string,
+      {
+        email: string;
+        displayName: string | null;
+        competencies: string[];
+      }
+    >();
 
     for (const recipient of recipients) {
       const email = recipient.email.toLowerCase().trim();
@@ -135,7 +157,26 @@ export class DepartmentsService {
       normalized.set(email, {
         email,
         displayName: recipient.displayName?.trim() || null,
+        competencies: this.normalizeCompetencies(recipient.competencies),
       });
+    }
+
+    return [...normalized.values()];
+  }
+
+  private normalizeCompetencies(competencies: string[] | undefined): string[] {
+    if (!competencies) {
+      return [];
+    }
+
+    const normalized = new Map<string, string>();
+    for (const raw of competencies) {
+      const competency = raw.trim();
+      if (!competency) {
+        continue;
+      }
+
+      normalized.set(competency.toLowerCase(), competency);
     }
 
     return [...normalized.values()];

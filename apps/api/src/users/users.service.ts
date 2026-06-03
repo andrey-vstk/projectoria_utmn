@@ -51,7 +51,7 @@ export class UsersService {
     return this.prisma.user.create({
       data: {
         email: normalizedEmail,
-        fullName: dto.fullName,
+        fullName: dto.fullName.trim(),
         passwordHash,
         role: dto.role,
         status: dto.status ?? UserStatus.ACTIVE,
@@ -69,7 +69,13 @@ export class UsersService {
       throw new NotFoundException('Пользователь не найден');
     }
 
-    if (user.role === Role.ADMIN && dto.role === Role.INITIATOR) {
+    const targetRole = dto.role ?? user.role;
+    const targetStatus = dto.status ?? user.status;
+    if (
+      user.role === Role.ADMIN &&
+      user.status === UserStatus.ACTIVE &&
+      (targetRole !== Role.ADMIN || targetStatus !== UserStatus.ACTIVE)
+    ) {
       const adminCount = await this.prisma.user.count({
         where: { role: Role.ADMIN, status: UserStatus.ACTIVE },
       });
@@ -78,8 +84,18 @@ export class UsersService {
       }
     }
 
+    const normalizedEmail =
+      dto.email === undefined ? undefined : dto.email.toLowerCase().trim();
+    if (normalizedEmail && normalizedEmail !== user.email) {
+      const existing = await this.findByEmail(normalizedEmail);
+      if (existing && existing.id !== userId) {
+        throw new BadRequestException('Пользователь с таким email уже существует');
+      }
+    }
+
     const data: Prisma.UserUpdateInput = {
-      fullName: dto.fullName,
+      email: normalizedEmail,
+      fullName: dto.fullName?.trim(),
       role: dto.role,
       status: dto.status,
     };

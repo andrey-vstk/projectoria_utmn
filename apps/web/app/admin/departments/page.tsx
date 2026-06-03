@@ -1,59 +1,144 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, KeyboardEvent, useEffect, useState } from 'react';
 import { cn } from '@/lib/cn';
 import { AdminOnly } from '@/components/admin-only';
 import { ProtectedPage } from '@/components/protected-page';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { apiRequest } from '@/lib/api';
 
 interface Department {
   id: string;
   code: string;
   name: string;
-  description?: string | null;
+  competencies: string[];
   isActive: boolean;
   recipients: DepartmentRecipient[];
 }
 
 interface DepartmentRecipient {
+  id?: string;
   email: string;
   displayName?: string | null;
+  competencies: string[];
+}
+
+interface CompetencyEditorProps {
+  values: string[];
+  onChange: (values: string[]) => void;
+  placeholder?: string;
 }
 
 function createEmptyRecipient(): DepartmentRecipient {
-  return { displayName: '', email: '' };
+  return { displayName: '', email: '', competencies: [] };
+}
+
+function normalizeCompetencies(values: string[]): string[] {
+  const normalized = new Map<string, string>();
+  for (const raw of values) {
+    const competency = raw.trim();
+    if (!competency) {
+      continue;
+    }
+    normalized.set(competency.toLowerCase(), competency);
+  }
+  return [...normalized.values()];
+}
+
+function parseCompetencies(value: string): string[] {
+  return value
+    .split(/[,\n;]+/g)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function normalizeRecipients(recipients: DepartmentRecipient[]): DepartmentRecipient[] {
-  const seen = new Set<string>();
-  const normalized: DepartmentRecipient[] = [];
+  const normalized = new Map<string, DepartmentRecipient>();
 
   for (const recipient of recipients) {
     const email = recipient.email.toLowerCase().trim();
-    if (!email || seen.has(email)) {
+    if (!email) {
       continue;
     }
-    seen.add(email);
-    normalized.push({
-      displayName: recipient.displayName?.trim() || null,
+    normalized.set(email, {
       email,
+      displayName: recipient.displayName?.trim() || null,
+      competencies: normalizeCompetencies(recipient.competencies),
     });
   }
 
-  return normalized;
+  return [...normalized.values()];
 }
 
 function getDepartmentSignature(item: Department): string {
   return JSON.stringify({
     name: item.name.trim(),
-    description: (item.description ?? '').trim(),
+    competencies: normalizeCompetencies(item.competencies),
     isActive: item.isActive,
     recipients: normalizeRecipients(item.recipients),
   });
+}
+
+function CompetencyEditor({
+  values,
+  onChange,
+  placeholder = 'Введите компетенцию',
+}: CompetencyEditorProps) {
+  const [input, setInput] = useState('');
+
+  const add = () => {
+    const additions = parseCompetencies(input);
+    if (additions.length === 0) {
+      return;
+    }
+    onChange(normalizeCompetencies([...values, ...additions]));
+    setInput('');
+  };
+
+  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'Enter') {
+      return;
+    }
+    event.preventDefault();
+    add();
+  };
+
+  return (
+    <div className="competency-editor">
+      <div className="competency-tags">
+        {values.length > 0 ? (
+          values.map((competency) => (
+            <span className="competency-tag" key={competency}>
+              <span>{competency}</span>
+              <button
+                type="button"
+                className="competency-tag-remove"
+                onClick={() => onChange(values.filter((item) => item !== competency))}
+                aria-label={`Удалить компетенцию ${competency}`}
+              >
+                ×
+              </button>
+            </span>
+          ))
+        ) : (
+          <span className="competency-empty">Не указаны</span>
+        )}
+      </div>
+      <div className="competency-controls">
+        <Input
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder={placeholder}
+        />
+        <Button type="button" variant="secondary" onClick={add} disabled={!input.trim()}>
+          Добавить
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 export default function AdminDepartmentsPage() {
@@ -62,9 +147,14 @@ export default function AdminDepartmentsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
-
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [expandedDepartments, setExpandedDepartments] = useState<Record<string, boolean>>(
+    {},
+  );
+  const [createOpen, setCreateOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
+  const [competencies, setCompetencies] = useState<string[]>([]);
   const [recipients, setRecipients] = useState<DepartmentRecipient[]>([
     createEmptyRecipient(),
   ]);
@@ -92,37 +182,47 @@ export default function AdminDepartmentsPage() {
     void load();
   }, []);
 
-  const isDepartmentDirty = (item: Department): boolean => {
-    const initialSignature = initialSignatures[item.id];
-    if (!initialSignature) {
-      return false;
-    }
-
-    return getDepartmentSignature(item) !== initialSignature;
+  const resetCreateForm = () => {
+    setName('');
+    setCompetencies([]);
+    setRecipients([createEmptyRecipient()]);
   };
+
+  const closeCreate = () => {
+    if (creating) {
+      return;
+    }
+    setCreateOpen(false);
+    resetCreateForm();
+  };
+
+  const isDepartmentDirty = (item: Department): boolean =>
+    getDepartmentSignature(item) !== initialSignatures[item.id];
 
   const createDepartment = async (event: FormEvent) => {
     event.preventDefault();
+    setCreating(true);
     setError(null);
     try {
       await apiRequest('/departments', {
         method: 'POST',
         body: JSON.stringify({
           name,
-          description,
+          competencies: normalizeCompetencies(competencies),
           recipients: normalizeRecipients(recipients),
         }),
       });
-      setName('');
-      setDescription('');
-      setRecipients([createEmptyRecipient()]);
+      setCreateOpen(false);
+      resetCreateForm();
       await load();
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setCreating(false);
     }
   };
 
-  const updateDepartment = async (department: Department) => {
+  const saveDepartment = async (department: Department) => {
     if (!isDepartmentDirty(department)) {
       return;
     }
@@ -134,7 +234,7 @@ export default function AdminDepartmentsPage() {
         method: 'PATCH',
         body: JSON.stringify({
           name: department.name,
-          description: department.description,
+          competencies: normalizeCompetencies(department.competencies),
           isActive: department.isActive,
           recipients: normalizeRecipients(department.recipients),
         }),
@@ -147,10 +247,54 @@ export default function AdminDepartmentsPage() {
     }
   };
 
-  const updateNewRecipient = (
+  const deleteDepartment = async (department: Department) => {
+    const confirmed = window.confirm(
+      `Удалить подразделение «${department.name}» из реестра? История рассылок и откликов сохранится.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingId(department.id);
+    setError(null);
+    try {
+      await apiRequest(`/departments/${department.id}`, {
+        method: 'DELETE',
+      });
+      setItems((prev) => prev.filter((item) => item.id !== department.id));
+      setInitialSignatures((prev) => {
+        const next = { ...prev };
+        delete next[department.id];
+        return next;
+      });
+      setExpandedDepartments((prev) => {
+        const next = { ...prev };
+        delete next[department.id];
+        return next;
+      });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const patchDepartment = <K extends keyof Department>(
+    departmentId: string,
+    field: K,
+    value: Department[K],
+  ) => {
+    setItems((prev) =>
+      prev.map((department) =>
+        department.id === departmentId ? { ...department, [field]: value } : department,
+      ),
+    );
+  };
+
+  const updateNewRecipient = <K extends keyof DepartmentRecipient>(
     index: number,
-    field: keyof DepartmentRecipient,
-    value: string,
+    field: K,
+    value: DepartmentRecipient[K],
   ) => {
     setRecipients((prev) =>
       prev.map((recipient, recipientIndex) =>
@@ -159,15 +303,11 @@ export default function AdminDepartmentsPage() {
     );
   };
 
-  const removeNewRecipient = (index: number) => {
-    setRecipients((prev) => prev.filter((_, recipientIndex) => recipientIndex !== index));
-  };
-
-  const updateDepartmentRecipient = (
+  const updateDepartmentRecipient = <K extends keyof DepartmentRecipient>(
     departmentId: string,
     index: number,
-    field: keyof DepartmentRecipient,
-    value: string,
+    field: K,
+    value: DepartmentRecipient[K],
   ) => {
     setItems((prev) =>
       prev.map((department) =>
@@ -187,10 +327,7 @@ export default function AdminDepartmentsPage() {
     setItems((prev) =>
       prev.map((department) =>
         department.id === departmentId
-          ? {
-              ...department,
-              recipients: [...department.recipients, createEmptyRecipient()],
-            }
+          ? { ...department, recipients: [...department.recipients, createEmptyRecipient()] }
           : department,
       ),
     );
@@ -211,227 +348,381 @@ export default function AdminDepartmentsPage() {
     );
   };
 
+  const toggleDepartment = (departmentId: string) => {
+    setExpandedDepartments((prev) => ({
+      ...prev,
+      [departmentId]: !prev[departmentId],
+    }));
+  };
+
   return (
     <ProtectedPage>
-      <div className="page">
-        <div className="page-head">
+      <div className="page departments-page">
+        <div className="page-head departments-page-head">
           <div>
-            <h1 className="page-title">Админка: подразделения</h1>
-            <p className="page-subtitle">Управление справочником и адресатами рассылки.</p>
+            <h1 className="page-title">Подразделения</h1>
+            <p className="page-subtitle">
+              Компетенции подразделений и сотрудников для точной маршрутизации проектов.
+            </p>
           </div>
         </div>
 
         <AdminOnly>
-          <Card className="card-soft">
-            <div className="section-head">
+          {error ? <p className="message-danger">{error}</p> : null}
+
+          <Card className="departments-registry">
+            <div className="departments-registry-head">
               <div>
-                <h3 className="section-title">Добавить подразделение</h3>
+                <h3 className="section-title">Реестр подразделений</h3>
+                <p className="section-subtitle">
+                  {items.length} подразделений,{' '}
+                  {items.filter((item) => item.isActive).length} активных
+                </p>
               </div>
+              <Button onClick={() => setCreateOpen(true)}>Добавить подразделение</Button>
             </div>
 
-            <form onSubmit={createDepartment} className="grid-2">
-              <div className="field" style={{ gridColumn: '1 / -1' }}>
-                <label className="label">Название</label>
-                <Input value={name} onChange={(e) => setName(e.target.value)} required />
-              </div>
-              <div className="field" style={{ gridColumn: '1 / -1' }}>
-                <label className="label">Описание</label>
-                <Textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  style={{ minHeight: 90 }}
-                />
-              </div>
-              <div className="field" style={{ gridColumn: '1 / -1' }}>
-                <label className="label">Сотрудники и адресаты</label>
-                <div className="department-recipient-editor department-recipient-editor-create">
-                  <div className="department-recipient-editor-head">
-                    <span>ФИО сотрудника или подразделение</span>
-                    <span>Рабочая почта</span>
-                  </div>
-                  {recipients.map((recipient, index) => (
-                    <div className="department-recipient-row" key={index}>
-                      <Input
-                        value={recipient.displayName ?? ''}
-                        onChange={(event) =>
-                          updateNewRecipient(index, 'displayName', event.target.value)
-                        }
-                        placeholder="Иванов Иван Иванович"
-                      />
-                      <Input
-                        type="email"
-                        value={recipient.email}
-                        onChange={(event) =>
-                          updateNewRecipient(index, 'email', event.target.value)
-                        }
-                        placeholder="employee@utmn.ru"
-                        required
-                      />
-                      <button
-                        type="button"
-                        className="department-recipient-remove"
-                        onClick={() => removeNewRecipient(index)}
-                        disabled={recipients.length === 1}
-                      >
-                        Удалить
-                      </button>
-                    </div>
-                  ))}
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="department-recipient-add"
-                    onClick={() =>
-                      setRecipients((prev) => [...prev, createEmptyRecipient()])
-                    }
-                  >
-                    Добавить сотрудника
-                  </Button>
-                </div>
-              </div>
-              <div>
-                <Button type="submit">Создать</Button>
-              </div>
-            </form>
-          </Card>
-
-          <Card>
-            <div className="section-head">
-              <div>
-                <h3 className="section-title">Список подразделений</h3>
-              </div>
-            </div>
-
-            {loading ? <p className="muted">Загрузка...</p> : null}
-            {error ? <p className="message-danger">{error}</p> : null}
+            {loading ? <p className="muted departments-loading">Загрузка...</p> : null}
 
             {!loading ? (
-              <div className="table-wrap departments-table-wrap">
-                <table className="departments-table">
-                  <thead>
-                    <tr>
-                      <th>Название</th>
-                      <th>Сотрудники и адресаты</th>
-                      <th className="departments-col-active">Активно</th>
-                      <th className="departments-col-actions">Действия</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((item) => (
-                      <tr
-                        key={item.id}
-                        className={cn(!item.isActive && 'departments-row-inactive')}
-                      >
-                        <td className="departments-name-cell">
-                          <span className="departments-cell-label">Подразделение</span>
-                          <Input
-                            value={item.name}
-                            onChange={(e) =>
-                              setItems((prev) =>
-                                prev.map((d) =>
-                                  d.id === item.id ? { ...d, name: e.target.value } : d,
-                                ),
-                              )
+              <div className="departments-list">
+                {items.map((item) => {
+                  const expanded = Boolean(expandedDepartments[item.id]);
+                  const dirty = isDepartmentDirty(item);
+                  const isSaving = savingId === item.id;
+                  const isDeleting = deletingId === item.id;
+
+                  return (
+                    <section
+                      key={item.id}
+                      className={cn(
+                        'department-registry-item',
+                        expanded && 'department-registry-item-expanded',
+                        !item.isActive && 'department-registry-item-inactive',
+                        dirty && 'department-registry-item-dirty',
+                      )}
+                    >
+                      <div className="department-registry-summary">
+                        <button
+                          type="button"
+                          className="department-registry-expand"
+                          onClick={() => toggleDepartment(item.id)}
+                          aria-expanded={expanded}
+                        >
+                          <span className="department-registry-chevron">
+                            {expanded ? '−' : '+'}
+                          </span>
+                          <span className="department-registry-title">
+                            <strong>{item.name}</strong>
+                            <span>
+                              {item.competencies.length > 0
+                                ? `${item.competencies.length} компетенц.`
+                                : 'Компетенции не указаны'}
+                            </span>
+                          </span>
+                        </button>
+
+                        <div className="department-registry-competencies">
+                          <span className="departments-cell-label">Компетенции</span>
+                          <div className="department-registry-tag-preview">
+                            {item.competencies.length > 0 ? (
+                              <>
+                                {item.competencies.slice(0, 3).map((competency) => (
+                                  <span className="competency-tag" key={competency}>
+                                    {competency}
+                                  </span>
+                                ))}
+                                {item.competencies.length > 3 ? (
+                                  <span className="department-registry-tag-more">
+                                    +{item.competencies.length - 3}
+                                  </span>
+                                ) : null}
+                              </>
+                            ) : (
+                              <span className="competency-empty">Не указаны</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="department-registry-employees">
+                          <span className="departments-cell-label">Адресаты</span>
+                          <strong>{item.recipients.length}</strong>
+                        </div>
+
+                        <label className="suggestion-toggle departments-toggle">
+                          <input
+                            type="checkbox"
+                            checked={item.isActive}
+                            onChange={(event) =>
+                              patchDepartment(item.id, 'isActive', event.target.checked)
                             }
                           />
-                        </td>
-                        <td>
-                          <div className="department-recipient-editor department-recipient-editor-table">
-                            <span className="department-recipient-count">
-                              {item.recipients.length} адресат(ов)
-                            </span>
-                            {item.recipients.map((recipient, index) => (
-                              <div className="department-recipient-row" key={index}>
-                                <Input
-                                  value={recipient.displayName ?? ''}
-                                  onChange={(event) =>
-                                    updateDepartmentRecipient(
-                                      item.id,
-                                      index,
-                                      'displayName',
-                                      event.target.value,
-                                    )
-                                  }
-                                  placeholder={item.name}
-                                />
-                                <Input
-                                  type="email"
-                                  value={recipient.email}
-                                  onChange={(event) =>
-                                    updateDepartmentRecipient(
-                                      item.id,
-                                      index,
-                                      'email',
-                                      event.target.value,
-                                    )
-                                  }
-                                  placeholder="employee@utmn.ru"
-                                />
-                                <button
-                                  type="button"
-                                  className="department-recipient-remove"
-                                  onClick={() => removeDepartmentRecipient(item.id, index)}
-                                >
-                                  Удалить
-                                </button>
-                              </div>
-                            ))}
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              className="department-recipient-add"
-                              onClick={() => addDepartmentRecipient(item.id)}
-                            >
-                              Добавить сотрудника
-                            </Button>
+                          <span className="suggestion-toggle-track">
+                            <span className="suggestion-toggle-thumb" />
+                          </span>
+                          <span className="suggestion-toggle-text">
+                            {item.isActive ? 'Активно' : 'Неактивно'}
+                          </span>
+                        </label>
+
+                        <div className="department-registry-actions">
+                          <Button
+                            variant="secondary"
+                            disabled={!dirty || isSaving || isDeleting}
+                            onClick={() => void saveDepartment(item)}
+                          >
+                            {isSaving ? 'Сохраняем...' : 'Сохранить'}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            disabled={isDeleting}
+                            onClick={() => toggleDepartment(item.id)}
+                          >
+                            {expanded ? 'Свернуть' : 'Изменить'}
+                          </Button>
+                          <Button
+                            variant="danger"
+                            disabled={isSaving || isDeleting}
+                            onClick={() => void deleteDepartment(item)}
+                          >
+                            {isDeleting ? 'Удаляем...' : 'Удалить'}
+                          </Button>
+                        </div>
+                      </div>
+
+                      {expanded ? (
+                        <div className="department-registry-details">
+                          <div className="department-detail-panel department-detail-profile">
+                            <h4 className="department-detail-title">Подразделение</h4>
+                            <div className="field">
+                              <label className="label">Название</label>
+                              <Input
+                                value={item.name}
+                                onChange={(event) =>
+                                  patchDepartment(item.id, 'name', event.target.value)
+                                }
+                              />
+                            </div>
                           </div>
-                        </td>
-                        <td className="departments-col-active">
-                          <label className="suggestion-toggle departments-toggle">
-                            <input
-                              type="checkbox"
-                              checked={item.isActive}
-                              onChange={(e) =>
-                                setItems((prev) =>
-                                  prev.map((d) =>
-                                    d.id === item.id ? { ...d, isActive: e.target.checked } : d,
-                                  ),
-                                )
+
+                          <div className="department-detail-panel">
+                            <h4 className="department-detail-title">
+                              Компетенции подразделения
+                            </h4>
+                            <CompetencyEditor
+                              values={item.competencies}
+                              onChange={(values) =>
+                                patchDepartment(item.id, 'competencies', values)
                               }
                             />
-                            <span className="suggestion-toggle-track">
-                              <span className="suggestion-toggle-thumb" />
-                            </span>
-                            <span className="suggestion-toggle-text">
-                              {item.isActive ? 'Активно' : 'Неактивно'}
-                            </span>
-                          </label>
-                        </td>
-                        <td className="departments-col-actions">
-                          <div className="form-actions departments-actions">
-                            <Button
-                              variant="secondary"
-                              disabled={!isDepartmentDirty(item) || savingId === item.id}
-                              onClick={() => void updateDepartment(item)}
-                            >
-                              {savingId === item.id ? 'Сохраняем...' : 'Сохранить'}
-                            </Button>
                           </div>
-                        </td>
-                      </tr>
-                    ))}
-                    {items.length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="muted">
-                          Подразделения отсутствуют.
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
+
+                          <div className="department-detail-panel department-detail-employees">
+                            <div className="department-recipient-summary">
+                              <div>
+                                <h4 className="department-detail-title">
+                                  Сотрудники и адресаты
+                                </h4>
+                                <span>{item.recipients.length} адресат(ов)</span>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                className="department-recipient-add"
+                                onClick={() => addDepartmentRecipient(item.id)}
+                              >
+                                Добавить сотрудника
+                              </Button>
+                            </div>
+                            <div className="department-employees-grid">
+                              {item.recipients.length > 0 ? (
+                                item.recipients.map((recipient, index) => (
+                                  <div className="department-employee-card" key={index}>
+                                    <div className="department-employee-main">
+                                      <Input
+                                        value={recipient.displayName ?? ''}
+                                        onChange={(event) =>
+                                          updateDepartmentRecipient(
+                                            item.id,
+                                            index,
+                                            'displayName',
+                                            event.target.value,
+                                          )
+                                        }
+                                        placeholder="ФИО сотрудника или подразделение"
+                                      />
+                                      <Input
+                                        type="email"
+                                        value={recipient.email}
+                                        onChange={(event) =>
+                                          updateDepartmentRecipient(
+                                            item.id,
+                                            index,
+                                            'email',
+                                            event.target.value,
+                                          )
+                                        }
+                                        placeholder="employee@utmn.ru"
+                                      />
+                                      <button
+                                        type="button"
+                                        className="department-recipient-remove"
+                                        onClick={() =>
+                                          removeDepartmentRecipient(item.id, index)
+                                        }
+                                      >
+                                        Удалить
+                                      </button>
+                                    </div>
+                                    <CompetencyEditor
+                                      values={recipient.competencies}
+                                      onChange={(values) =>
+                                        updateDepartmentRecipient(
+                                          item.id,
+                                          index,
+                                          'competencies',
+                                          values,
+                                        )
+                                      }
+                                      placeholder="Компетенция сотрудника"
+                                    />
+                                  </div>
+                                ))
+                              ) : (
+                                <p className="muted department-recipient-empty">
+                                  Добавьте сотрудника или общий email подразделения.
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+                    </section>
+                  );
+                })}
+                {items.length === 0 ? (
+                  <p className="muted departments-empty">
+                    Подразделения отсутствуют.
+                  </p>
+                ) : null}
               </div>
             ) : null}
           </Card>
+
+          {createOpen ? (
+            <div
+              className="modal-backdrop"
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) {
+                  closeCreate();
+                }
+              }}
+            >
+              <Card className="department-create-modal">
+                <div className="department-create-head">
+                  <div>
+                    <h3 className="section-title">Новое подразделение</h3>
+                    <p className="section-subtitle">
+                      Добавьте профиль подразделения и первых адресатов.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="modal-close"
+                    onClick={closeCreate}
+                    aria-label="Закрыть"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <form onSubmit={createDepartment} className="department-create-form">
+                  <div className="field">
+                    <label className="label">Название</label>
+                    <Input
+                      value={name}
+                      onChange={(event) => setName(event.target.value)}
+                      required
+                      autoFocus
+                    />
+                  </div>
+                  <div className="field">
+                    <label className="label">Компетенции подразделения</label>
+                    <CompetencyEditor values={competencies} onChange={setCompetencies} />
+                  </div>
+                  <div className="field">
+                    <div className="department-create-section-head">
+                      <label className="label">Сотрудники и адресаты</label>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="department-recipient-add"
+                        onClick={() =>
+                          setRecipients((prev) => [...prev, createEmptyRecipient()])
+                        }
+                      >
+                        Добавить сотрудника
+                      </Button>
+                    </div>
+                    <div className="department-create-recipients">
+                      {recipients.map((recipient, index) => (
+                        <div className="department-employee-card" key={index}>
+                          <div className="department-employee-main">
+                            <Input
+                              value={recipient.displayName ?? ''}
+                              onChange={(event) =>
+                                updateNewRecipient(index, 'displayName', event.target.value)
+                              }
+                              placeholder="ФИО сотрудника или подразделение"
+                            />
+                            <Input
+                              type="email"
+                              value={recipient.email}
+                              onChange={(event) =>
+                                updateNewRecipient(index, 'email', event.target.value)
+                              }
+                              placeholder="employee@utmn.ru"
+                            />
+                            <button
+                              type="button"
+                              className="department-recipient-remove"
+                              onClick={() =>
+                                setRecipients((prev) =>
+                                  prev.filter((_, recipientIndex) => recipientIndex !== index),
+                                )
+                              }
+                            >
+                              Удалить
+                            </button>
+                          </div>
+                          <CompetencyEditor
+                            values={recipient.competencies}
+                            onChange={(values) =>
+                              updateNewRecipient(index, 'competencies', values)
+                            }
+                            placeholder="Компетенция сотрудника"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="department-create-actions">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={closeCreate}
+                      disabled={creating}
+                    >
+                      Отмена
+                    </Button>
+                    <Button type="submit" disabled={creating || !name.trim()}>
+                      {creating ? 'Создаем...' : 'Создать подразделение'}
+                    </Button>
+                  </div>
+                </form>
+              </Card>
+            </div>
+          ) : null}
         </AdminOnly>
       </div>
     </ProtectedPage>
