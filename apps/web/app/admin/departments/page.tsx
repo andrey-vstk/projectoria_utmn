@@ -426,18 +426,11 @@ export default function AdminDepartmentsPage() {
                           <span className="departments-cell-label">Компетенции</span>
                           <div className="department-registry-tag-preview">
                             {item.competencies.length > 0 ? (
-                              <>
-                                {item.competencies.slice(0, 3).map((competency) => (
-                                  <span className="competency-tag" key={competency}>
-                                    {competency}
-                                  </span>
-                                ))}
-                                {item.competencies.length > 3 ? (
-                                  <span className="department-registry-tag-more">
-                                    +{item.competencies.length - 3}
-                                  </span>
-                                ) : null}
-                              </>
+                              item.competencies.map((competency) => (
+                                <span className="competency-tag" key={competency}>
+                                  {competency}
+                                </span>
+                              ))
                             ) : (
                               <span className="competency-empty">Не указаны</span>
                             )}
@@ -474,13 +467,6 @@ export default function AdminDepartmentsPage() {
                             {isSaving ? 'Сохраняем...' : 'Сохранить'}
                           </Button>
                           <Button
-                            variant="ghost"
-                            disabled={isDeleting}
-                            onClick={() => toggleDepartment(item.id)}
-                          >
-                            {expanded ? 'Свернуть' : 'Изменить'}
-                          </Button>
-                          <Button
                             variant="danger"
                             disabled={isSaving || isDeleting}
                             onClick={() => void deleteDepartment(item)}
@@ -492,38 +478,60 @@ export default function AdminDepartmentsPage() {
 
                       {expanded ? (
                         <div className="department-registry-details">
-                          <div className="department-detail-panel department-detail-profile">
-                            <h4 className="department-detail-title">Подразделение</h4>
-                            <div className="field">
-                              <label className="label">Название</label>
-                              <Input
-                                value={item.name}
-                                onChange={(event) =>
-                                  patchDepartment(item.id, 'name', event.target.value)
-                                }
-                              />
+                          <div className="department-detail-panel department-detail-division">
+                            <div className="department-detail-panel-head">
+                              <div>
+                                <h4 className="department-detail-title">
+                                  Информация о подразделении
+                                </h4>
+                                <span>
+                                  Название и компетенции, по которым модель подбирает
+                                  адресатов.
+                                </span>
+                              </div>
+                              <span
+                                className={cn(
+                                  'department-detail-state',
+                                  dirty && 'department-detail-state-dirty',
+                                )}
+                              >
+                                {dirty ? 'Не сохранено' : 'Сохранено'}
+                              </span>
                             </div>
-                          </div>
 
-                          <div className="department-detail-panel">
-                            <h4 className="department-detail-title">
-                              Компетенции подразделения
-                            </h4>
-                            <CompetencyEditor
-                              values={item.competencies}
-                              onChange={(values) =>
-                                patchDepartment(item.id, 'competencies', values)
-                              }
-                            />
+                            <div className="department-division-form">
+                              <div className="field">
+                                <label className="label">Название</label>
+                                <Input
+                                  value={item.name}
+                                  onChange={(event) =>
+                                    patchDepartment(item.id, 'name', event.target.value)
+                                  }
+                                />
+                              </div>
+                              <div className="field">
+                                <label className="label">Компетенции</label>
+                                <CompetencyEditor
+                                  values={item.competencies}
+                                  onChange={(values) =>
+                                    patchDepartment(item.id, 'competencies', values)
+                                  }
+                                />
+                              </div>
+                            </div>
                           </div>
 
                           <div className="department-detail-panel department-detail-employees">
                             <div className="department-recipient-summary">
                               <div>
                                 <h4 className="department-detail-title">
-                                  Сотрудники и адресаты
+                                  Сотрудники
                                 </h4>
-                                <span>{item.recipients.length} адресат(ов)</span>
+                                <span>
+                                  {item.recipients.length > 0
+                                    ? `${item.recipients.length} адресат(ов)`
+                                    : 'Адресаты не добавлены'}
+                                </span>
                               </div>
                               <Button
                                 type="button"
@@ -534,66 +542,84 @@ export default function AdminDepartmentsPage() {
                                 Добавить сотрудника
                               </Button>
                             </div>
-                            <div className="department-employees-grid">
-                              {item.recipients.length > 0 ? (
-                                item.recipients.map((recipient, index) => (
-                                  <div className="department-employee-card" key={index}>
-                                    <div className="department-employee-main">
-                                      <Input
-                                        value={recipient.displayName ?? ''}
-                                        onChange={(event) =>
-                                          updateDepartmentRecipient(
-                                            item.id,
-                                            index,
-                                            'displayName',
-                                            event.target.value,
-                                          )
-                                        }
-                                        placeholder="ФИО сотрудника или подразделение"
-                                      />
-                                      <Input
-                                        type="email"
-                                        value={recipient.email}
-                                        onChange={(event) =>
-                                          updateDepartmentRecipient(
-                                            item.id,
-                                            index,
-                                            'email',
-                                            event.target.value,
-                                          )
-                                        }
-                                        placeholder="employee@utmn.ru"
-                                      />
-                                      <button
-                                        type="button"
-                                        className="department-recipient-remove"
-                                        onClick={() =>
-                                          removeDepartmentRecipient(item.id, index)
-                                        }
-                                      >
-                                        Удалить
-                                      </button>
-                                    </div>
-                                    <CompetencyEditor
-                                      values={recipient.competencies}
-                                      onChange={(values) =>
-                                        updateDepartmentRecipient(
-                                          item.id,
-                                          index,
-                                          'competencies',
-                                          values,
-                                        )
-                                      }
-                                      placeholder="Компетенция сотрудника"
-                                    />
-                                  </div>
-                                ))
-                              ) : (
-                                <p className="muted department-recipient-empty">
-                                  Добавьте сотрудника или общий email подразделения.
-                                </p>
-                              )}
-                            </div>
+                            {item.recipients.length > 0 ? (
+                              <div className="department-employees-table-wrap">
+                                <table className="department-employees-table">
+                                  <thead>
+                                    <tr>
+                                      <th>ФИО / адресат</th>
+                                      <th>Email</th>
+                                      <th>Компетенции сотрудника</th>
+                                      <th aria-label="Действия" />
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {item.recipients.map((recipient, index) => (
+                                      <tr key={index}>
+                                        <td>
+                                          <Input
+                                            value={recipient.displayName ?? ''}
+                                            onChange={(event) =>
+                                              updateDepartmentRecipient(
+                                                item.id,
+                                                index,
+                                                'displayName',
+                                                event.target.value,
+                                              )
+                                            }
+                                            placeholder="ФИО или название адресата"
+                                          />
+                                        </td>
+                                        <td>
+                                          <Input
+                                            type="email"
+                                            value={recipient.email}
+                                            onChange={(event) =>
+                                              updateDepartmentRecipient(
+                                                item.id,
+                                                index,
+                                                'email',
+                                                event.target.value,
+                                              )
+                                            }
+                                            placeholder="employee@utmn.ru"
+                                          />
+                                        </td>
+                                        <td>
+                                          <CompetencyEditor
+                                            values={recipient.competencies}
+                                            onChange={(values) =>
+                                              updateDepartmentRecipient(
+                                                item.id,
+                                                index,
+                                                'competencies',
+                                                values,
+                                              )
+                                            }
+                                            placeholder="Компетенция сотрудника"
+                                          />
+                                        </td>
+                                        <td>
+                                          <button
+                                            type="button"
+                                            className="department-recipient-remove"
+                                            onClick={() =>
+                                              removeDepartmentRecipient(item.id, index)
+                                            }
+                                          >
+                                            Удалить
+                                          </button>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            ) : (
+                              <p className="muted department-recipient-empty">
+                                Добавьте сотрудника или общий email подразделения.
+                              </p>
+                            )}
                           </div>
                         </div>
                       ) : null}

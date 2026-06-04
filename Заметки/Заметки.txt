@@ -1,0 +1,32 @@
+**Памятка: Отправка На Сервер**
+Локально:
+
+```bash
+git status
+git add apps/web/app/admin/departments/page.tsx apps/web/app/globals.css
+git commit -m "Улучшить интерфейс подразделений"
+git push origin andrey
+```
+
+На сервере:
+
+```bash
+cd /opt/projectoria_utmn
+git pull origin andrey
+docker compose build web
+docker compose up -d web
+docker compose ps
+```
+
+Проверка логов:
+
+```bash
+docker logs projectoria-web --tail=50
+```
+
+Если менялись API, `docker-compose.yml` или `.env`, тогда лучше:
+
+```bash
+docker compose build api web
+docker compose up -d --force-recreate api web caddy
+```
