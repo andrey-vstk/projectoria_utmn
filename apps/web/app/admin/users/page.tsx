@@ -200,7 +200,7 @@ export default function AdminUsersPage() {
       <div className="page">
         <div className="page-head">
           <div>
-            <h1 className="page-title">Админка: пользователи</h1>
+            <h1 className="page-title">Пользователи</h1>
             <p className="page-subtitle">
               Создание аккаунтов, редактирование данных и управление доступом сотрудников.
             </p>
@@ -276,94 +276,92 @@ export default function AdminUsersPage() {
             {error ? <p className="message-danger">{error}</p> : null}
 
             {!loading ? (
-              <div className="table-wrap admin-users-table-wrap">
-                <table className="admin-users-table">
-                  <thead>
-                    <tr>
-                      <th>Email</th>
-                      <th>ФИО</th>
-                      <th>Новый пароль</th>
-                      <th>Роль</th>
-                      <th>Статус</th>
-                      <th />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {users.map((user) => {
-                      const isSaving = savingId === user.id;
+              <div className="admin-user-cards">
+                {users.map((user) => {
+                  const isSaving = savingId === user.id;
 
-                      return (
-                        <tr key={user.id}>
-                          <td>
-                            <Input
-                              type="email"
-                              className="admin-user-input"
-                              value={user.email}
-                              onChange={(event) =>
-                                patchUser(user.id, 'email', event.target.value)
-                              }
-                            />
-                          </td>
-                          <td>
-                            <Input
-                              className="admin-user-input"
-                              value={user.fullName}
-                              onChange={(event) =>
-                                patchUser(user.id, 'fullName', event.target.value)
-                              }
-                            />
-                          </td>
-                          <td>
-                            <Input
-                              type="password"
-                              className="admin-user-input admin-user-password"
-                              minLength={8}
-                              placeholder="Не менять"
-                              value={passwordDrafts[user.id] ?? ''}
-                              onChange={(event) =>
-                                setUserPasswordDraft(user.id, event.target.value)
-                              }
-                            />
-                          </td>
-                          <td>
-                            <AdminToggle
-                              value={user.role}
-                              options={ROLE_OPTIONS}
-                              onChange={(value) => patchUser(user.id, 'role', value)}
-                              ariaLabel={`Выбор роли пользователя ${user.email}`}
-                              className="admin-toggle-compact"
-                            />
-                          </td>
-                          <td>
-                            <AdminToggle
-                              value={user.status}
-                              options={STATUS_OPTIONS}
-                              onChange={(value) => patchUser(user.id, 'status', value)}
-                              ariaLabel={`Выбор статуса пользователя ${user.email}`}
-                              className="admin-toggle-compact"
-                            />
-                          </td>
-                          <td>
-                            <Button
-                              variant="secondary"
-                              disabled={isSaving}
-                              onClick={() => void updateUser(user)}
-                            >
-                              {isSaving ? 'Сохраняем...' : 'Сохранить'}
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {users.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="muted">
-                          Пользователи не найдены.
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
+                  return (
+                    <article className="admin-user-card" key={user.id}>
+                      <div className="admin-user-card-head">
+                        <div className="admin-user-heading">
+                          <strong>{user.fullName || 'Без имени'}</strong>
+                          <span>{user.email}</span>
+                        </div>
+                        <div className="admin-user-state">
+                          <span>{user.role === 'ADMIN' ? 'Администратор' : 'Инициатор'}</span>
+                          <span>{USER_STATUS_LABELS[user.status]}</span>
+                        </div>
+                      </div>
+
+                      <div className="admin-user-edit-grid">
+                        <div className="field">
+                          <label className="label">Email</label>
+                          <Input
+                            type="email"
+                            className="admin-user-input"
+                            value={user.email}
+                            onChange={(event) => patchUser(user.id, 'email', event.target.value)}
+                          />
+                        </div>
+                        <div className="field">
+                          <label className="label">ФИО</label>
+                          <Input
+                            className="admin-user-input"
+                            value={user.fullName}
+                            onChange={(event) =>
+                              patchUser(user.id, 'fullName', event.target.value)
+                            }
+                          />
+                        </div>
+                        <div className="field">
+                          <label className="label">Новый пароль</label>
+                          <Input
+                            type="password"
+                            className="admin-user-input admin-user-password"
+                            minLength={8}
+                            placeholder="Не менять"
+                            value={passwordDrafts[user.id] ?? ''}
+                            onChange={(event) =>
+                              setUserPasswordDraft(user.id, event.target.value)
+                            }
+                          />
+                        </div>
+                        <div className="field">
+                          <label className="label">Роль</label>
+                          <AdminToggle
+                            value={user.role}
+                            options={ROLE_OPTIONS}
+                            onChange={(value) => patchUser(user.id, 'role', value)}
+                            ariaLabel={`Выбор роли пользователя ${user.email}`}
+                            className="admin-toggle-compact"
+                          />
+                        </div>
+                        <div className="field">
+                          <label className="label">Статус</label>
+                          <AdminToggle
+                            value={user.status}
+                            options={STATUS_OPTIONS}
+                            onChange={(value) => patchUser(user.id, 'status', value)}
+                            ariaLabel={`Выбор статуса пользователя ${user.email}`}
+                            className="admin-toggle-compact"
+                          />
+                        </div>
+                        <div className="admin-user-save">
+                          <Button
+                            variant="secondary"
+                            disabled={isSaving}
+                            onClick={() => void updateUser(user)}
+                          >
+                            {isSaving ? 'Сохраняем...' : 'Сохранить'}
+                          </Button>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+                {users.length === 0 ? (
+                  <p className="muted admin-users-empty">Пользователи не найдены.</p>
+                ) : null}
               </div>
             ) : null}
           </section>

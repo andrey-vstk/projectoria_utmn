@@ -1,13 +1,7 @@
 import type { Metadata } from 'next';
-import { Manrope } from 'next/font/google';
 import { AppShell } from '@/components/app-shell';
 import { Providers } from './providers';
 import './globals.css';
-
-const manrope = Manrope({
-  subsets: ['latin', 'cyrillic'],
-  weight: ['400', '500', '600', '700'],
-});
 
 export const metadata: Metadata = {
   title: 'Проектория',
@@ -21,7 +15,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ru">
-      <body className={manrope.className}>
+      <body>
         <Providers>
           <AppShell>{children}</AppShell>
         </Providers>

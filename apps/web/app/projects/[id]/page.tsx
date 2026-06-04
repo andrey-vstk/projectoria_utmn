@@ -627,7 +627,7 @@ export default function ProjectDetailPage() {
                   {new Date(project.createdAt).toLocaleString('ru-RU')}
                 </p>
               </div>
-              <ProjectStatusBadge status={project.status} />
+              <ProjectStatusBadge status={project.status} className="project-head-status" />
             </div>
 
             {error ? <p className="message-danger">{error}</p> : null}
@@ -774,6 +774,7 @@ export default function ProjectDetailPage() {
                   {!suggestionsLocked ? (
                     <div className="section-actions">
                       <Button
+                        className="approve-send-button"
                         onClick={approveAndSend}
                         disabled={!canApproveAndSend || processing}
                       >
