@@ -1,9 +1,41 @@
+import { domainToASCII } from 'node:url';
+
+function normalizeUrl(value: string | undefined, fallback: string): string {
+  const raw = (value ?? fallback).trim();
+
+  try {
+    const url = new URL(raw);
+    const asciiHost = domainToASCII(url.hostname);
+    if (asciiHost) {
+      url.hostname = asciiHost;
+    }
+
+    const normalized = url.toString();
+    return normalized.endsWith('/') ? normalized.slice(0, -1) : normalized;
+  } catch {
+    return raw;
+  }
+}
+
+function normalizeOrigin(value: string | undefined, fallback: string): string {
+  const raw = normalizeUrl(value, fallback);
+
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return raw;
+  }
+}
+
 export default () => ({
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: Number(process.env.PORT ?? 3001),
-  appUrl: process.env.APP_URL ?? 'http://localhost:3000',
-  apiUrl: process.env.API_URL ?? 'http://localhost:3001',
-  publicBaseUrl: process.env.PUBLIC_BASE_URL ?? 'http://localhost:3000',
+  appUrl: normalizeOrigin(process.env.APP_URL, 'http://localhost:3000'),
+  apiUrl: normalizeUrl(process.env.API_URL, 'http://localhost:3001'),
+  publicBaseUrl: normalizeUrl(
+    process.env.PUBLIC_BASE_URL,
+    'http://localhost:3000',
+  ),
   databaseUrl:
     process.env.DATABASE_URL ??
     'postgresql://postgres:postgres@localhost:5432/projectoria?schema=public',
