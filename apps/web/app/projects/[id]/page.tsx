@@ -125,6 +125,14 @@ function getSuggestionsSignature(
 }
 
 type BadgeTone = 'neutral' | 'info' | 'success' | 'danger';
+type AnalysisStageState = 'pending' | 'active' | 'completed' | 'error';
+
+interface AnalysisStage {
+  key: string;
+  title: string;
+  description: string;
+  state: AnalysisStageState;
+}
 
 function getMailingStatusTone(status: string): BadgeTone {
   if (status === 'SENT') {
@@ -139,11 +147,200 @@ function getMailingStatusTone(status: string): BadgeTone {
   return 'neutral';
 }
 
+function getAnalysisErrorMessage(project: ProjectDetail | null): string | null {
+  if (!project) {
+    return null;
+  }
+
+  return project.analysis?.errorMessage ?? (project.status === 'FAILED' ? 'Анализ завершился ошибкой.' : null);
+}
+
+function explainAnalysisError(message: string | null): string | null {
+  if (!message) {
+    return null;
+  }
+
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes('таймаут') || normalized.includes('timeout')) {
+    return 'LLM/Ollama или workflow не вернули ответ за отведенное время. Проверьте доступность сервера модели, OpenVPN и время выполнения workflow.';
+  }
+
+  if (
+    normalized.includes('ollama') ||
+    normalized.includes('openvpn') ||
+    normalized.includes('/api/tags') ||
+    normalized.includes('серверу llm') ||
+    normalized.includes('модель') ||
+    normalized.includes('доступные модели')
+  ) {
+    return 'API не смог подтвердить доступность Ollama-сервера или выбранной модели. Проверьте OpenVPN на сервере, маршрут до LLM-сервера, OLLAMA_BASE_URL и LLM_MODEL.';
+  }
+
+  if (normalized.includes('n8n_llm_webhook_url')) {
+    return 'В API не задан webhook для LLM-анализа. Проверьте переменную N8N_LLM_WEBHOOK_URL в .env и перезапустите api.';
+  }
+
+  if (
+    normalized.includes('econnrefused') ||
+    normalized.includes('enotfound') ||
+    normalized.includes('econnreset') ||
+    normalized.includes('socket') ||
+    normalized.includes('connect')
+  ) {
+    return 'API не смог подключиться к серверу модели или соединение было разорвано. Проверьте OpenVPN, маршрут до Ollama и доступность n8n workflow.';
+  }
+
+  if (normalized.includes('returned') || normalized.includes('http')) {
+    return 'n8n вернул HTTP-ошибку. Проверьте последний execution в n8n и ответ узла Webhook/Respond to Webhook.';
+  }
+
+  if (
+    normalized.includes('json') ||
+    normalized.includes('ожидаемом формате') ||
+    normalized.includes('невалид')
+  ) {
+    return 'Модель или workflow вернули ответ не в том JSON-формате, который ожидает приложение. Нужно проверить финальный узел парсинга/нормализации JSON.';
+  }
+
+  return 'Ошибка возникла во время LLM-анализа или обработки ответа. Техническая причина показана ниже.';
+}
+
+function resolveFailedAnalysisStage(errorMessage: string | null): number {
+  const normalized = errorMessage?.toLowerCase() ?? '';
+
+  if (
+    normalized.includes('ollama') ||
+    normalized.includes('openvpn') ||
+    normalized.includes('/api/tags') ||
+    normalized.includes('серверу llm')
+  ) {
+    return 1;
+  }
+
+  if (
+    normalized.includes('модель') ||
+    normalized.includes('доступные модели')
+  ) {
+    return 2;
+  }
+
+  if (
+    normalized.includes('econnrefused') ||
+    normalized.includes('enotfound') ||
+    normalized.includes('socket') ||
+    normalized.includes('connect')
+  ) {
+    return 1;
+  }
+
+  if (normalized.includes('таймаут') || normalized.includes('timeout')) {
+    return 3;
+  }
+
+  if (
+    normalized.includes('json') ||
+    normalized.includes('ожидаемом формате') ||
+    normalized.includes('невалид')
+  ) {
+    return 3;
+  }
+
+  return 3;
+}
+
+function buildAnalysisStages(
+  project: ProjectDetail,
+  analysisInProgress: boolean,
+  analysisElapsedMs: number | null,
+): AnalysisStage[] {
+  const baseStages: AnalysisStage[] = [
+    {
+      key: 'queue',
+      title: 'Постановка в очередь',
+      description: 'Сайт принял запрос и создал задачу анализа.',
+      state: 'pending',
+    },
+    {
+      key: 'llm-server',
+      title: 'Проверка LLM-сервера',
+      description: 'API проверяет доступ к серверу модели через OpenVPN.',
+      state: 'pending',
+    },
+    {
+      key: 'ollama-model',
+      title: 'Проверка Ollama и модели',
+      description: 'Ollama отвечает на /api/tags, выбранная модель доступна.',
+      state: 'pending',
+    },
+    {
+      key: 'generation',
+      title: 'Генерация ответа',
+      description: 'Workflow отправляет prompt в Ollama и ждет JSON.',
+      state: 'pending',
+    },
+    {
+      key: 'save',
+      title: 'Сохранение результата',
+      description: 'Сайт сохраняет анализ и готовит письма к проверке.',
+      state: 'pending',
+    },
+  ];
+
+  const generationStatus = project.analysis?.generationStatus;
+  const failed = project.status === 'FAILED' || generationStatus === 'FAILED';
+  const ready =
+    generationStatus === 'READY' ||
+    ['READY_FOR_REVIEW', 'APPROVED', 'SENDING', 'SENT'].includes(project.status);
+
+  if (ready) {
+    return baseStages.map((stage) => ({ ...stage, state: 'completed' }));
+  }
+
+  if (failed) {
+    const failedIndex = resolveFailedAnalysisStage(getAnalysisErrorMessage(project));
+    return baseStages.map((stage, index) => ({
+      ...stage,
+      state:
+        index < failedIndex
+          ? 'completed'
+          : index === failedIndex
+            ? 'error'
+            : 'pending',
+    }));
+  }
+
+  if (project.status === 'QUEUED') {
+    return baseStages.map((stage, index) => ({
+      ...stage,
+      state: index === 0 ? 'active' : 'pending',
+    }));
+  }
+
+  if (analysisInProgress) {
+    const elapsedSeconds = Math.floor((analysisElapsedMs ?? 0) / 1000);
+    const activeIndex = elapsedSeconds < 6 ? 1 : elapsedSeconds < 20 ? 2 : 3;
+
+    return baseStages.map((stage, index) => ({
+      ...stage,
+      state:
+        index < activeIndex
+          ? 'completed'
+          : index === activeIndex
+            ? 'active'
+            : 'pending',
+    }));
+  }
+
+  return baseStages;
+}
+
 function getRealtimeProjectSignature(project: ProjectDetail): string {
   return [
     project.status,
     project.updatedAt,
     project.analysis?.generationStatus ?? '',
+    project.analysis?.errorMessage ?? '',
     project.analysis?.summary ?? '',
     project.analysis?.suggestions?.length ?? 0,
     project.analysis?.tasksJson?.length ?? 0,
@@ -369,6 +566,24 @@ export default function ProjectDetailPage() {
     }
     return hasSuccessfulAnalysis ? 'success' : 'danger';
   }, [analysisInProgress, hasSuccessfulAnalysis]);
+
+  const analysisErrorMessage = useMemo(
+    () => getAnalysisErrorMessage(project),
+    [project],
+  );
+
+  const analysisErrorExplanation = useMemo(
+    () => explainAnalysisError(analysisErrorMessage),
+    [analysisErrorMessage],
+  );
+
+  const analysisStages = useMemo(
+    () =>
+      project
+        ? buildAnalysisStages(project, analysisInProgress, analysisElapsedMs)
+        : [],
+    [analysisElapsedMs, analysisInProgress, project],
+  );
 
   const createSuggestionDraft = useCallback(
     (suggestion: ProjectSuggestion, prevDraft?: SuggestionDraft): SuggestionDraft => ({
@@ -708,28 +923,64 @@ export default function ProjectDetailPage() {
 
               {showAnalysisState ? (
                 <div className="notice analysis-progress">
-                  {analysisInProgress ? <div className="loader-ring" /> : null}
-                  <div>
-                    {project ? (
-                      <p className="analysis-time">
-                        <Badge tone={analysisStateTone} className="analysis-status-badge">
-                          {PROJECT_STATUS_LABELS[project.status] ?? project.status}
-                        </Badge>
-                      </p>
-                    ) : null}
-                    {analysisInProgress ? (
-                      <p className="muted analysis-time">
-                        Время выполнения:{' '}
-                        {analysisElapsedMs !== null ? formatDuration(analysisElapsedMs) : '...'}
-                      </p>
-                    ) : null}
-                    {!analysisInProgress && analysisElapsedMs !== null ? (
-                      <p className="muted analysis-time">
-                        Время, потраченное на анализ: {formatDuration(analysisElapsedMs)}
-                      </p>
-                    ) : null}
+                  <div className="analysis-progress-head">
+                    {analysisInProgress ? <div className="loader-ring" /> : null}
+                    <div className="analysis-progress-main">
+                      {project ? (
+                        <p className="analysis-time">
+                          <Badge tone={analysisStateTone} className="analysis-status-badge">
+                            {PROJECT_STATUS_LABELS[project.status] ?? project.status}
+                          </Badge>
+                        </p>
+                      ) : null}
+                      {analysisInProgress ? (
+                        <p className="muted analysis-time">
+                          Время выполнения:{' '}
+                          {analysisElapsedMs !== null ? formatDuration(analysisElapsedMs) : '...'}
+                        </p>
+                      ) : null}
+                      {!analysisInProgress && analysisElapsedMs !== null ? (
+                        <p className="muted analysis-time">
+                          Время, потраченное на анализ: {formatDuration(analysisElapsedMs)}
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
+
+                  {analysisStages.length > 0 ? (
+                    <ol className="analysis-stage-list" aria-label="Этапы анализа">
+                      {analysisStages.map((stage, index) => (
+                        <li
+                          key={stage.key}
+                          className={cn(
+                            'analysis-stage',
+                            `analysis-stage-${stage.state}`,
+                          )}
+                        >
+                          <span className="analysis-stage-marker">
+                            {stage.state === 'completed'
+                              ? '✓'
+                              : stage.state === 'error'
+                                ? '!'
+                                : index + 1}
+                          </span>
+                          <span className="analysis-stage-content">
+                            <strong>{stage.title}</strong>
+                            <small>{stage.description}</small>
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : null}
+
+                  {analysisErrorMessage ? (
+                    <div className="analysis-error-explanation">
+                      <strong>Пояснение ошибки</strong>
+                      {analysisErrorExplanation ? <p>{analysisErrorExplanation}</p> : null}
+                      <span>Техническая причина: {analysisErrorMessage}</span>
+                    </div>
+                  ) : null}
+                  </div>
               ) : null}
 
               {project.analysis ? (

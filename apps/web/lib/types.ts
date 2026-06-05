@@ -70,6 +70,7 @@ export interface ProjectDetail {
     tasksJson: Array<{ title: string; description: string; priority: string }>;
     rawJson: unknown;
     generationStatus: string;
+    errorMessage?: string | null;
     suggestions: ProjectSuggestion[];
   } | null;
   mailings: Array<{

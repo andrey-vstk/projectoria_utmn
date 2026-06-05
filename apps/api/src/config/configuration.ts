@@ -65,12 +65,17 @@ export default () => ({
     apiUrl: process.env.LLM_API_URL ?? '',
     apiKey: process.env.LLM_API_KEY ?? '',
     model: process.env.LLM_MODEL ?? '',
+    ollamaBaseUrl: normalizeUrl(process.env.OLLAMA_BASE_URL, ''),
+    ollamaCheckTimeoutMs: Number(process.env.OLLAMA_CHECK_TIMEOUT_MS ?? 10000),
   },
   n8n: {
     webhookUrl: process.env.N8N_WEBHOOK_URL ?? '',
     emailWorkflowUrl: process.env.N8N_EMAIL_WORKFLOW_URL ?? '',
     llmWebhookUrl: process.env.N8N_LLM_WEBHOOK_URL ?? '',
-    llmTimeoutMs: Number(process.env.N8N_LLM_TIMEOUT_MS ?? 900000),
+    ollamaProxyChatUrl:
+      process.env.N8N_OLLAMA_PROXY_CHAT_URL ??
+      'http://api:3001/internal/ollama/api/chat',
+    llmTimeoutMs: Number(process.env.N8N_LLM_TIMEOUT_MS ?? 1800000),
   },
   throttle: {
     ttl: Number(process.env.THROTTLE_TTL ?? 60),

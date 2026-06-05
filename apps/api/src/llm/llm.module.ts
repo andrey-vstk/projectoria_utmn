@@ -5,11 +5,15 @@ import { LLM_PROVIDER } from './llm.provider';
 import { LlmService } from './llm.service';
 import { MockLlmProvider } from './mock-llm.provider';
 import { N8nLlmProvider } from './n8n-llm.provider';
+import { OllamaHealthService } from './ollama-health.service';
+import { OllamaProxyController } from './ollama-proxy.controller';
 
 @Module({
+  controllers: [OllamaProxyController],
   providers: [
     MockLlmProvider,
     ExternalLlmProvider,
+    OllamaHealthService,
     N8nLlmProvider,
     {
       provide: LLM_PROVIDER,

@@ -4,22 +4,36 @@ import { N8nService } from '../n8n/n8n.service';
 import { buildLlmPrompt } from './llm.prompt';
 import { LlmProvider } from './llm.provider';
 import { LlmAnalysisInput, LlmStructuredResult } from './llm.types';
+import { OllamaHealthService } from './ollama-health.service';
 
 @Injectable()
 export class N8nLlmProvider implements LlmProvider {
   readonly providerName = 'n8n';
   readonly modelName?: string;
+  private readonly ollamaBaseUrl: string;
+  private readonly ollamaProxyChatUrl: string;
 
   constructor(
     private readonly configService: ConfigService,
     private readonly n8nService: N8nService,
+    private readonly ollamaHealthService: OllamaHealthService,
   ) {
-    this.modelName = this.configService.get<string>('llm.model') ?? 'ollama';
+    const configuredModel = this.configService.get<string>('llm.model')?.trim();
+    this.modelName = configuredModel || 'qwen3.6:35b';
+    this.ollamaBaseUrl = this.configService.get<string>('llm.ollamaBaseUrl') ?? '';
+    this.ollamaProxyChatUrl =
+      this.configService.get<string>('n8n.ollamaProxyChatUrl') ?? '';
   }
 
   async analyze(input: LlmAnalysisInput): Promise<LlmStructuredResult> {
+    await this.ollamaHealthService.assertModelAvailable(this.modelName ?? '');
+
     const prompt = buildLlmPrompt(input);
     const payload = {
+      model: this.modelName,
+      ollamaBaseUrl: this.ollamaBaseUrl,
+      ollamaChatUrl: `${this.ollamaBaseUrl.replace(/\/$/, '')}/api/chat`,
+      ollamaProxyChatUrl: this.ollamaProxyChatUrl,
       prompt,
       projectTitle: input.projectTitle,
       sourceText: input.sourceText,

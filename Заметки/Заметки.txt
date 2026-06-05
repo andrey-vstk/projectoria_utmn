@@ -30,3 +30,11 @@ docker logs projectoria-web --tail=50
 docker compose build api web
 docker compose up -d --force-recreate api web caddy
 ```
+
+
+
+
+
+
+Подключение только к n8n
+ssh -L 5678:127.0.0.1:5678 root@45.80.71.202

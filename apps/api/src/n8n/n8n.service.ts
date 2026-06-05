@@ -1,5 +1,14 @@
+import { request as httpRequest } from 'node:http';
+import { request as httpsRequest } from 'node:https';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+
+interface TextHttpResponse {
+  ok: boolean;
+  status: number;
+  statusText: string;
+  text: string;
+}
 
 @Injectable()
 export class N8nService {
@@ -53,38 +62,84 @@ export class N8nService {
       return null;
     }
 
-    const timeoutMs = this.configService.get<number>('n8n.llmTimeoutMs') ?? 120000;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const configuredTimeoutMs = this.configService.get<number>('n8n.llmTimeoutMs');
+    const timeoutMs =
+      configuredTimeoutMs && Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs > 0
+        ? configuredTimeoutMs
+        : 1800000;
+
+    const response = await this.postJsonWithTimeout(url, payload, timeoutMs);
+
+    if (!response.ok) {
+      throw new Error(
+        `N8N LLM workflow returned ${response.status} ${response.statusText}`,
+      );
+    }
+
+    const text = response.text;
+    if (!text) {
+      return {};
+    }
 
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      return JSON.parse(text) as unknown;
+    } catch {
+      return text;
+    }
+  }
+
+  private postJsonWithTimeout(
+    url: string,
+    payload: Record<string, unknown>,
+    timeoutMs: number,
+  ): Promise<TextHttpResponse> {
+    const body = JSON.stringify(payload);
+    const target = new URL(url);
+    const request = target.protocol === 'https:' ? httpsRequest : httpRequest;
+    const timeoutMinutes = Math.round(timeoutMs / 60000);
+
+    return new Promise((resolve, reject) => {
+      const req = request(
+        {
+          protocol: target.protocol,
+          hostname: target.hostname,
+          port: target.port,
+          path: `${target.pathname}${target.search}`,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(body),
+          },
         },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
+        (res) => {
+          const chunks: string[] = [];
+          res.setEncoding('utf8');
+          res.on('data', (chunk: string) => chunks.push(chunk));
+          res.on('end', () => {
+            clearTimeout(timeoutId);
+            resolve({
+              ok: Boolean(res.statusCode && res.statusCode >= 200 && res.statusCode < 300),
+              status: res.statusCode ?? 0,
+              statusText: res.statusMessage ?? '',
+              text: chunks.join(''),
+            });
+          });
+        },
+      );
+
+      const timeoutId = setTimeout(() => {
+        req.destroy(
+          new Error(`Истек таймаут ожидания n8n LLM workflow: ${timeoutMinutes} мин`),
+        );
+      }, timeoutMs);
+
+      req.on('error', (error) => {
+        clearTimeout(timeoutId);
+        reject(error);
       });
 
-      if (!response.ok) {
-        throw new Error(
-          `N8N LLM workflow returned ${response.status} ${response.statusText}`,
-        );
-      }
-
-      const text = await response.text();
-      if (!text) {
-        return {};
-      }
-
-      try {
-        return JSON.parse(text) as unknown;
-      } catch {
-        return text;
-      }
-    } finally {
-      clearTimeout(timeoutId);
-    }
+      req.write(body);
+      req.end();
+    });
   }
 }

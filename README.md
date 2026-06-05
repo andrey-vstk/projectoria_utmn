@@ -281,7 +281,11 @@ Seed (`apps/api/prisma/seed.js`) создает:
 - `N8N_WEBHOOK_URL`: вызов при создании проекта
 - `N8N_EMAIL_WORKFLOW_URL`: если задан, отправка email делегируется в n8n workflow
 - `N8N_LLM_WEBHOOK_URL`: webhook n8n для LLM-анализа (через Ollama или другую локальную модель)
-- `N8N_LLM_TIMEOUT_MS`: таймаут ожидания ответа LLM workflow
+- `N8N_LLM_TIMEOUT_MS`: таймаут ожидания ответа LLM workflow, рекомендуемое значение `1800000` (30 минут)
+- `N8N_OLLAMA_PROXY_CHAT_URL`: внутренний URL, по которому n8n вызывает Ollama через API-прокси
+- `OLLAMA_BASE_URL`: адрес Ollama-сервера, доступного через OpenVPN/VPN-маршрут
+- `OLLAMA_CHECK_TIMEOUT_MS`: таймаут быстрой проверки Ollama перед запуском n8n workflow
+- `LLM_MODEL`: модель, которую приложение проверяет через `OLLAMA_BASE_URL/api/tags` и передает в n8n
 
 Что делает приложение:
 - хранит бизнес-состояние, статусы, токены отклика
@@ -306,15 +310,35 @@ docker compose exec ollama ollama pull llama3.1:8b
 LLM_PROVIDER=n8n
 # если API в Docker Compose:
 N8N_LLM_WEBHOOK_URL=http://n8n:5678/webhook/llm-analyze
+N8N_OLLAMA_PROXY_CHAT_URL=http://api:3001/internal/ollama/api/chat
+N8N_LLM_TIMEOUT_MS=1800000
+OLLAMA_BASE_URL=http://10.255.243.25:11434
+OLLAMA_CHECK_TIMEOUT_MS=10000
 # если API запускается локально вне Docker:
 # N8N_LLM_WEBHOOK_URL=http://localhost:5678/webhook/llm-analyze
-LLM_MODEL=ollama-локальная-модель
+LLM_MODEL=qwen3.6:35b
 ```
+
+Проверка Ollama на сервере:
+```bash
+curl --connect-timeout 5 http://10.255.243.25:11434/api/tags
+```
+
+В ответе модель из `LLM_MODEL` должна быть в списке `models[].name` или `models[].model`.
+
+В workflow n8n узел `Call Ollama Chat` должен использовать URL из payload:
+```text
+={{$json.ollamaRequestUrl}}
+```
+
+При Docker Compose по умолчанию `ollamaRequestUrl` будет равен
+`http://api:3001/internal/ollama/api/chat`, то есть n8n обращается к Ollama через API-прокси.
+Это нужно, чтобы проверка доступности Ollama и реальный запрос выполнялись из одного сервиса.
 
 2. В n8n собрать workflow:
 - `Webhook` (POST `/llm-analyze`)
 - `Code`/`Set` (сбор prompt из `prompt` или входных полей)
-- `HTTP Request` к `http://ollama:11434/api/chat` (или `/api/generate`)
+- `HTTP Request` к `={{$json.ollamaRequestUrl}}`
 - `Code` (нормализовать ответ до JSON по схеме)
 - `Respond to Webhook`
 
