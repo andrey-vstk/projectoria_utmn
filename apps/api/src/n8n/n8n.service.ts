@@ -10,11 +10,97 @@ interface TextHttpResponse {
   text: string;
 }
 
+const ANALYSIS_CANCELLED_MESSAGE = 'Анализ остановлен пользователем.';
+
 @Injectable()
 export class N8nService {
   private readonly logger = new Logger(N8nService.name);
+  private readonly cancelledProjectIds = new Set<string>();
+  private readonly projectControllers = new Map<string, Set<AbortController>>();
 
   constructor(private readonly configService: ConfigService) {}
+
+  beginProjectAnalysis(projectId: string): void {
+    this.cancelledProjectIds.delete(projectId);
+  }
+
+  finishProjectAnalysis(projectId: string): void {
+    this.projectControllers.delete(projectId);
+  }
+
+  cancelProjectAnalysis(projectId: string): void {
+    this.cancelledProjectIds.add(projectId);
+    const controllers = this.projectControllers.get(projectId);
+    controllers?.forEach((controller) => {
+      if (!controller.signal.aborted) {
+        controller.abort(new Error(ANALYSIS_CANCELLED_MESSAGE));
+      }
+    });
+    this.projectControllers.delete(projectId);
+  }
+
+  isProjectAnalysisCancelled(projectId: string): boolean {
+    return this.cancelledProjectIds.has(projectId);
+  }
+
+  isAnalysisCancellationError(error: unknown): boolean {
+    return (
+      error instanceof Error &&
+      (error.message === ANALYSIS_CANCELLED_MESSAGE ||
+        error.message.includes(ANALYSIS_CANCELLED_MESSAGE))
+    );
+  }
+
+  async waitBeforeAnalysisRetry(projectId: string, delayMs: number): Promise<void> {
+    await this.runCancellableProjectTask(projectId, (signal) =>
+      new Promise<void>((resolve, reject) => {
+        const timeoutId = setTimeout(resolve, delayMs);
+        const abort = () => {
+          clearTimeout(timeoutId);
+          reject(new Error(ANALYSIS_CANCELLED_MESSAGE));
+        };
+
+        if (signal?.aborted) {
+          abort();
+          return;
+        }
+
+        signal?.addEventListener('abort', abort, { once: true });
+      }),
+    );
+  }
+
+  async runCancellableProjectTask<T>(
+    projectId: string | undefined,
+    task: (signal?: AbortSignal) => Promise<T>,
+  ): Promise<T> {
+    if (!projectId) {
+      return task();
+    }
+
+    if (this.isProjectAnalysisCancelled(projectId)) {
+      throw new Error(ANALYSIS_CANCELLED_MESSAGE);
+    }
+
+    const controller = new AbortController();
+    const controllers = this.projectControllers.get(projectId) ?? new Set<AbortController>();
+    controllers.add(controller);
+    this.projectControllers.set(projectId, controllers);
+
+    try {
+      return await task(controller.signal);
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new Error(ANALYSIS_CANCELLED_MESSAGE);
+      }
+      throw error;
+    } finally {
+      controllers.delete(controller);
+      if (controllers.size === 0) {
+        this.projectControllers.delete(projectId);
+      }
+    }
+  }
 
   async notifyProjectCreated(payload: Record<string, unknown>): Promise<void> {
     const url = this.configService.get<string>('n8n.webhookUrl');
@@ -56,7 +142,10 @@ export class N8nService {
     }
   }
 
-  async runLlmWorkflow(payload: Record<string, unknown>): Promise<unknown | null> {
+  async runLlmWorkflow(
+    payload: Record<string, unknown>,
+    projectId?: string,
+  ): Promise<unknown | null> {
     const url = this.configService.get<string>('n8n.llmWebhookUrl');
     if (!url) {
       return null;
@@ -68,7 +157,9 @@ export class N8nService {
         ? configuredTimeoutMs
         : 1800000;
 
-    const response = await this.postJsonWithTimeout(url, payload, timeoutMs);
+    const response = await this.runCancellableProjectTask(projectId, (signal) =>
+      this.postJsonWithTimeout(url, payload, timeoutMs, signal),
+    );
 
     if (!response.ok) {
       throw new Error(
@@ -92,6 +183,7 @@ export class N8nService {
     url: string,
     payload: Record<string, unknown>,
     timeoutMs: number,
+    signal?: AbortSignal,
   ): Promise<TextHttpResponse> {
     const body = JSON.stringify(payload);
     const target = new URL(url);
@@ -127,15 +219,34 @@ export class N8nService {
         },
       );
 
+      const abortRequest = (error: Error) => {
+        req.destroy(error);
+      };
+
+      const onAbort = () => {
+        abortRequest(new Error(ANALYSIS_CANCELLED_MESSAGE));
+      };
+
       const timeoutId = setTimeout(() => {
         req.destroy(
           new Error(`Истек таймаут ожидания n8n LLM workflow: ${timeoutMinutes} мин`),
         );
       }, timeoutMs);
 
+      if (signal?.aborted) {
+        onAbort();
+      } else {
+        signal?.addEventListener('abort', onAbort, { once: true });
+      }
+
       req.on('error', (error) => {
         clearTimeout(timeoutId);
+        signal?.removeEventListener('abort', onAbort);
         reject(error);
+      });
+
+      req.on('close', () => {
+        signal?.removeEventListener('abort', onAbort);
       });
 
       req.write(body);

@@ -1,10 +1,12 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, Role, User, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -109,5 +111,40 @@ export class UsersService {
       data,
       select: USER_SELECT,
     });
+  }
+
+  async remove(userId: string, currentUser: JwtPayload): Promise<{ ok: true }> {
+    if (currentUser.sub === userId) {
+      throw new ForbiddenException('Нельзя удалить собственный аккаунт');
+    }
+
+    const user = await this.findById(userId);
+    if (!user) {
+      throw new NotFoundException('Пользователь не найден');
+    }
+
+    if (user.role === Role.ADMIN && user.status === UserStatus.ACTIVE) {
+      const adminCount = await this.prisma.user.count({
+        where: { role: Role.ADMIN, status: UserStatus.ACTIVE },
+      });
+      if (adminCount <= 1) {
+        throw new BadRequestException('Нельзя удалить последнего активного администратора');
+      }
+    }
+
+    const projectCount = await this.prisma.project.count({
+      where: { authorId: userId },
+    });
+    if (projectCount > 0) {
+      throw new BadRequestException(
+        'Нельзя удалить пользователя с созданными проектами. Отключите доступ через статус.',
+      );
+    }
+
+    await this.prisma.user.delete({
+      where: { id: userId },
+    });
+
+    return { ok: true };
   }
 }

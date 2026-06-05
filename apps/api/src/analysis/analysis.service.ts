@@ -8,8 +8,11 @@ import {
 } from '../common/utils/department-invitation.util';
 import { DepartmentsService } from '../departments/departments.service';
 import { LlmService } from '../llm/llm.service';
+import { N8nService } from '../n8n/n8n.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ANALYSIS_JOB, ANALYSIS_QUEUE } from '../queues/queue.constants';
+
+const ANALYSIS_CANCELLED_MESSAGE = 'Анализ остановлен пользователем.';
 
 @Injectable()
 export class AnalysisService {
@@ -19,6 +22,7 @@ export class AnalysisService {
     private readonly prisma: PrismaService,
     private readonly llmService: LlmService,
     private readonly departmentsService: DepartmentsService,
+    private readonly n8nService: N8nService,
     @InjectQueue(ANALYSIS_QUEUE) private readonly analysisQueue: Queue,
   ) {}
 
@@ -56,29 +60,35 @@ export class AnalysisService {
         processingAt: new Date(),
       },
     });
-
-    await this.prisma.analysisResult.upsert({
-      where: { projectId },
-      create: {
-        projectId,
-        summary: '',
-        tasksJson: [] as Prisma.InputJsonValue,
-        rawJson: {} as Prisma.InputJsonValue,
-        generationStatus: AnalysisStatus.PROCESSING,
-        llmProvider: this.llmService.providerName,
-        llmModel: this.llmService.modelName,
-      },
-      update: {
-        generationStatus: AnalysisStatus.PROCESSING,
-        errorMessage: null,
-        llmProvider: this.llmService.providerName,
-        llmModel: this.llmService.modelName,
-      },
-    });
+    this.n8nService.beginProjectAnalysis(projectId);
 
     try {
+      await this.prisma.analysisResult.upsert({
+        where: { projectId },
+        create: {
+          projectId,
+          summary: '',
+          tasksJson: [] as Prisma.InputJsonValue,
+          rawJson: {} as Prisma.InputJsonValue,
+          generationStatus: AnalysisStatus.PROCESSING,
+          llmProvider: this.llmService.providerName,
+          llmModel: this.llmService.modelName,
+        },
+        update: {
+          generationStatus: AnalysisStatus.PROCESSING,
+          errorMessage: null,
+          llmProvider: this.llmService.providerName,
+          llmModel: this.llmService.modelName,
+        },
+      });
+
+      if (this.n8nService.isProjectAnalysisCancelled(projectId)) {
+        throw new Error(ANALYSIS_CANCELLED_MESSAGE);
+      }
+
       const departments = await this.departmentsService.listActive();
       const llmResult = await this.llmService.analyze({
+        projectId,
         projectTitle: project.title,
         sourceText: project.sourceText,
         departments: departments.map((d) => ({
@@ -90,6 +100,17 @@ export class AnalysisService {
           ],
         })),
       });
+
+      const currentProject = await this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { status: true },
+      });
+      if (currentProject?.status !== ProjectStatus.PROCESSING) {
+        this.logger.warn(
+          `Skip saving analysis result for ${projectId}: project status is ${currentProject?.status}`,
+        );
+        return;
+      }
 
       const analysis = await this.prisma.analysisResult.update({
         where: { projectId },
@@ -146,7 +167,9 @@ export class AnalysisService {
         },
       });
     } catch (error) {
-      const message = (error as Error).message;
+      const message = this.n8nService.isAnalysisCancellationError(error)
+        ? ANALYSIS_CANCELLED_MESSAGE
+        : (error as Error).message;
       this.logger.error(`Analysis failed for ${projectId}: ${message}`);
 
       await this.prisma.analysisResult.update({
@@ -165,7 +188,55 @@ export class AnalysisService {
         },
       });
 
-      throw error;
+      if (!this.n8nService.isAnalysisCancellationError(error)) {
+        throw error;
+      }
+    } finally {
+      this.n8nService.finishProjectAnalysis(projectId);
     }
+  }
+
+  async cancelProjectAnalysis(projectId: string): Promise<void> {
+    this.n8nService.cancelProjectAnalysis(projectId);
+
+    const job = await this.analysisQueue.getJob(`analysis-${projectId}`);
+    if (job) {
+      try {
+        const state = await job.getState();
+        if (state !== 'active') {
+          await job.remove();
+        }
+      } catch (error) {
+        this.logger.warn(
+          `Could not remove analysis job for ${projectId}: ${(error as Error).message}`,
+        );
+      }
+    }
+
+    await this.prisma.analysisResult.upsert({
+      where: { projectId },
+      create: {
+        projectId,
+        summary: '',
+        tasksJson: [] as Prisma.InputJsonValue,
+        rawJson: {} as Prisma.InputJsonValue,
+        generationStatus: AnalysisStatus.FAILED,
+        errorMessage: ANALYSIS_CANCELLED_MESSAGE,
+        llmProvider: this.llmService.providerName,
+        llmModel: this.llmService.modelName,
+      },
+      update: {
+        generationStatus: AnalysisStatus.FAILED,
+        errorMessage: ANALYSIS_CANCELLED_MESSAGE,
+      },
+    });
+
+    await this.prisma.project.update({
+      where: { id: projectId },
+      data: {
+        status: ProjectStatus.FAILED,
+        failedAt: new Date(),
+      },
+    });
   }
 }

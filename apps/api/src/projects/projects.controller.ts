@@ -67,6 +67,11 @@ export class ProjectsController {
     return this.projectsService.queueAnalysis(id, user);
   }
 
+  @Post(':id/analyze/cancel')
+  cancelAnalysis(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
+    return this.projectsService.cancelAnalysis(id, user);
+  }
+
   @Patch(':id/source-text')
   updateSourceText(
     @Param('id') id: string,

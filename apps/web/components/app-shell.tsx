@@ -259,24 +259,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 >
                   <svg
                     className="logout-button-icon"
-                    width="17"
-                    height="17"
+                    width="24"
+                    height="24"
                     viewBox="0 0 24 24"
                     fill="none"
                     aria-hidden="true"
                   >
                     <path
-                      d="M14.5 9.5a4.5 4.5 0 1 1-2.7-4.12"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                    />
-                    <path
-                      d="M12.1 12.1 21 3.2m0 0v4.5m0-4.5h-4.5"
+                      d="M9.25 4.75H7A2.75 2.75 0 0 0 4.25 7.5v9A2.75 2.75 0 0 0 7 19.25h2.25"
                       stroke="currentColor"
                       strokeWidth="2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
+                    />
+                    <path
+                      d="M14.25 8.25 18 12l-3.75 3.75"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    <path
+                      d="M17.75 12H9.25"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
                     />
                   </svg>
                   <span>Выйти</span>

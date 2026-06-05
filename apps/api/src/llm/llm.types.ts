@@ -22,6 +22,7 @@ export interface LlmStructuredResult {
 }
 
 export interface LlmAnalysisInput {
+  projectId?: string;
   projectTitle: string;
   sourceText: string;
   departments: Array<{

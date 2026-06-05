@@ -18,6 +18,22 @@ docker compose up -d web
 docker compose ps
 ```
 
+При старом измененном коммите:
+
+```bash
+cd /opt/projectoria_utmn
+git fetch origin
+git reset --hard origin/andrey
+docker compose build api web
+docker compose up -d api web
+docker compose ps
+```
+
+
+
+
+
+
 Проверка логов:
 
 ```bash
@@ -33,7 +49,8 @@ docker compose up -d --force-recreate api web caddy
 
 
 
-
+Подключение к серверу
+ssh root@45.80.71.202
 
 
 Подключение только к n8n

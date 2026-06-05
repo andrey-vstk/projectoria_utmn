@@ -44,13 +44,18 @@ export class OllamaHealthService {
     }
   }
 
-  async runChat(payload: Record<string, unknown>, timeoutMs: number): Promise<unknown> {
+  async runChat(
+    payload: Record<string, unknown>,
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
     const baseUrl = this.requireBaseUrl();
     const response = await this.requestText(
       `${baseUrl}/api/chat`,
       'POST',
       timeoutMs,
       JSON.stringify(payload),
+      signal,
     );
 
     if (!response.ok) {
@@ -111,6 +116,7 @@ export class OllamaHealthService {
     method: 'GET' | 'POST',
     timeoutMs: number,
     body?: string,
+    signal?: AbortSignal,
   ): Promise<{ ok: boolean; status: number; statusText: string; text: string }> {
     const target = new URL(url);
     const request = target.protocol === 'https:' ? httpsRequest : httpRequest;
@@ -148,6 +154,10 @@ export class OllamaHealthService {
         },
       );
 
+      const onAbort = () => {
+        req.destroy(new BadGatewayException('Анализ остановлен пользователем.'));
+      };
+
       const timeoutId = setTimeout(() => {
         req.destroy(
           new BadGatewayException(
@@ -156,9 +166,20 @@ export class OllamaHealthService {
         );
       }, timeoutMs);
 
+      if (signal?.aborted) {
+        onAbort();
+      } else {
+        signal?.addEventListener('abort', onAbort, { once: true });
+      }
+
       req.on('error', (error) => {
         clearTimeout(timeoutId);
+        signal?.removeEventListener('abort', onAbort);
         reject(error);
+      });
+
+      req.on('close', () => {
+        signal?.removeEventListener('abort', onAbort);
       });
 
       if (body) {

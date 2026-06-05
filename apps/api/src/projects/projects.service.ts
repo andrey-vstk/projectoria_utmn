@@ -212,18 +212,28 @@ export class ProjectsService {
       throw new BadRequestException('Запуск анализа недоступен для текущего статуса');
     }
 
-    const transition = await this.prisma.project.updateMany({
-      where: {
-        id: projectId,
-        status: { in: allowedStatuses },
-      },
-      data: {
-        status: ProjectStatus.QUEUED,
-        queuedAt: new Date(),
-        processingAt: null,
-        readyAt: null,
-        failedAt: null,
-      },
+    const transition = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.project.updateMany({
+        where: {
+          id: projectId,
+          status: { in: allowedStatuses },
+        },
+        data: {
+          status: ProjectStatus.QUEUED,
+          queuedAt: new Date(),
+          processingAt: null,
+          readyAt: null,
+          failedAt: null,
+        },
+      });
+
+      if (result.count > 0) {
+        await tx.analysisResult.deleteMany({
+          where: { projectId },
+        });
+      }
+
+      return result;
     });
 
     if (transition.count === 0) {
@@ -257,6 +267,31 @@ export class ProjectsService {
       throw error;
     }
 
+    return { ok: true };
+  }
+
+  async cancelAnalysis(projectId: string, currentUser: JwtPayload) {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: {
+        authorId: true,
+        status: true,
+      },
+    });
+    if (!project) {
+      throw new NotFoundException('Проект не найден');
+    }
+
+    this.checkProjectAccess(project.authorId, currentUser);
+
+    if (
+      project.status !== ProjectStatus.QUEUED &&
+      project.status !== ProjectStatus.PROCESSING
+    ) {
+      return { ok: true, alreadyStopped: true };
+    }
+
+    await this.analysisService.cancelProjectAnalysis(projectId);
     return { ok: true };
   }
 

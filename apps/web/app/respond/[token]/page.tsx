@@ -87,11 +87,11 @@ export default function PublicResponsePage() {
   const responderLabel = name || status?.department.name || '';
 
   return (
-    <div className="auth-page response-page">
-      <Card className="auth-card response-card">
+    <div className="response-public-page response-page">
+      <Card className="response-card">
         <header className="response-header">
           <span className="response-eyebrow">Проектория · ТюмГУ</span>
-          <h1 className="auth-title">Решение об участии</h1>
+          <h1 className="response-title">Решение об участии</h1>
           <p className="response-header-text">
             Подтвердите готовность подразделения подключиться к проекту.
           </p>

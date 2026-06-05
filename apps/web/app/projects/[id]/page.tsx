@@ -130,7 +130,6 @@ type AnalysisStageState = 'pending' | 'active' | 'completed' | 'error';
 interface AnalysisStage {
   key: string;
   title: string;
-  description: string;
   state: AnalysisStageState;
 }
 
@@ -258,31 +257,26 @@ function buildAnalysisStages(
     {
       key: 'queue',
       title: 'Постановка в очередь',
-      description: 'Сайт принял запрос и создал задачу анализа.',
       state: 'pending',
     },
     {
       key: 'llm-server',
-      title: 'Проверка LLM-сервера',
-      description: 'API проверяет доступ к серверу модели через OpenVPN.',
+      title: 'Подключение к серверу',
       state: 'pending',
     },
     {
       key: 'ollama-model',
-      title: 'Проверка Ollama и модели',
-      description: 'Ollama отвечает на /api/tags, выбранная модель доступна.',
+      title: 'Подключение к модели',
       state: 'pending',
     },
     {
       key: 'generation',
       title: 'Генерация ответа',
-      description: 'Workflow отправляет prompt в Ollama и ждет JSON.',
       state: 'pending',
     },
     {
       key: 'save',
       title: 'Сохранение результата',
-      description: 'Сайт сохраняет анализ и готовит письма к проверке.',
       state: 'pending',
     },
   ];
@@ -370,6 +364,7 @@ export default function ProjectDetailPage() {
   const [savingSourceText, setSavingSourceText] = useState(false);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
+  const [cancellingAnalysis, setCancellingAnalysis] = useState(false);
   const [analysisNow, setAnalysisNow] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
   const autoSaveTimerRef = useRef<number | null>(null);
@@ -722,6 +717,25 @@ export default function ProjectDetailPage() {
   const runAnalysis = async () => {
     setProcessing(true);
     setError(null);
+    const queuedAt = new Date().toISOString();
+    skipNextAutosaveRef.current = true;
+    lastSavedSignatureRef.current = '';
+    setDrafts({});
+    setRecipientInputs({});
+    setRecipientErrors({});
+    setProject((prev) =>
+      prev
+        ? {
+            ...prev,
+            status: 'QUEUED',
+            queuedAt,
+            processingAt: null,
+            readyAt: null,
+            failedAt: null,
+            analysis: null,
+          }
+        : prev,
+    );
     try {
       await apiRequest(`/projects/${projectId}/analyze`, { method: 'POST', body: '{}' });
       await loadProject({ preserveDrafts: true });
@@ -729,6 +743,22 @@ export default function ProjectDetailPage() {
       setError((e as Error).message);
     } finally {
       setProcessing(false);
+    }
+  };
+
+  const cancelAnalysis = async () => {
+    setCancellingAnalysis(true);
+    setError(null);
+    try {
+      await apiRequest(`/projects/${projectId}/analyze/cancel`, {
+        method: 'POST',
+        body: '{}',
+      });
+      await loadProject({ preserveDrafts: true });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setCancellingAnalysis(false);
     }
   };
 
@@ -911,13 +941,23 @@ export default function ProjectDetailPage() {
                   <h3 className="section-title">Анализ</h3>
                 </div>
                 <div className="section-actions">
-                  <Button onClick={runAnalysis} disabled={!canRunAnalysis || processing}>
-                    {processing
-                      ? 'Запускаем...'
-                      : hasSuccessfulAnalysis
-                        ? 'Запустить повторный анализ'
-                        : 'Запустить анализ'}
-                  </Button>
+                  {analysisInProgress ? (
+                    <Button
+                      variant="danger"
+                      onClick={cancelAnalysis}
+                      disabled={cancellingAnalysis}
+                    >
+                      {cancellingAnalysis ? 'Отменяем...' : 'Отменить анализ'}
+                    </Button>
+                  ) : (
+                    <Button onClick={runAnalysis} disabled={!canRunAnalysis || processing}>
+                      {processing
+                        ? 'Запускаем...'
+                        : hasSuccessfulAnalysis
+                          ? 'Запустить повторный анализ'
+                          : 'Запустить анализ'}
+                    </Button>
+                  )}
                 </div>
               </div>
 
@@ -966,7 +1006,6 @@ export default function ProjectDetailPage() {
                           </span>
                           <span className="analysis-stage-content">
                             <strong>{stage.title}</strong>
-                            <small>{stage.description}</small>
                           </span>
                         </li>
                       ))}

@@ -411,7 +411,10 @@ export default function AdminDepartmentsPage() {
                           onClick={() => toggleDepartment(item.id)}
                           aria-expanded={expanded}
                         >
-                          <span className="department-tool-mark">{expanded ? '−' : '+'}</span>
+                          <span className="department-tool-mark" aria-hidden>
+                            <span />
+                            <span />
+                          </span>
                           <span className="department-tool-title">
                             <strong>{item.name || 'Новое подразделение'}</strong>
                           </span>

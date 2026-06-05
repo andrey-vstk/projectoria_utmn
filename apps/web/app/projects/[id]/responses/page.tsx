@@ -5,7 +5,6 @@ import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { ProtectedPage } from '@/components/protected-page';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiRequest } from '@/lib/api';
 import { subscribeToNotifications } from '@/lib/realtime';
@@ -32,6 +31,10 @@ interface ResponseItem {
   } | null;
 }
 
+interface ProjectHeader {
+  title: string;
+}
+
 type BadgeTone = 'neutral' | 'info' | 'success' | 'danger';
 
 function getMailingStatusTone(status: string): BadgeTone {
@@ -44,6 +47,7 @@ function getMailingStatusTone(status: string): BadgeTone {
 export default function ProjectResponsesPage() {
   const params = useParams<{ id: string }>();
   const [items, setItems] = useState<ResponseItem[]>([]);
+  const [projectTitle, setProjectTitle] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,11 +56,18 @@ export default function ProjectResponsesPage() {
       setLoading(true);
     }
     try {
-      const data = await apiRequest<ResponseItem[]>(`/projects/${params.id}/responses`, {
-        method: 'GET',
-        withCsrf: false,
-      });
+      const [data, project] = await Promise.all([
+        apiRequest<ResponseItem[]>(`/projects/${params.id}/responses`, {
+          method: 'GET',
+          withCsrf: false,
+        }),
+        apiRequest<ProjectHeader>(`/projects/${params.id}`, {
+          method: 'GET',
+          withCsrf: false,
+        }),
+      ]);
       setItems(data);
+      setProjectTitle(project.title);
       setError(null);
     } catch (e) {
       setError((e as Error).message);
@@ -106,11 +117,13 @@ export default function ProjectResponsesPage() {
           <div>
             <h1 className="page-title">Отклики по проекту</h1>
             <p className="page-subtitle">
-              Все адресаты рассылки и полученные решения по проекту.
+              {projectTitle
+                ? `Проект: ${projectTitle}`
+                : 'Все адресаты рассылки и полученные решения по проекту.'}
             </p>
           </div>
-          <Link href={`/projects/${params.id}`}>
-            <Button variant="secondary">Назад к проекту</Button>
+          <Link href={`/projects/${params.id}`} className="btn btn-secondary page-head-action">
+            Назад к проекту
           </Link>
         </div>
 

@@ -60,6 +60,7 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+        INTERNAL_API_URL: ${INTERNAL_API_URL:-http://api:3001}
     container_name: projectoria-web
     depends_on:
       - api
@@ -67,6 +68,7 @@ services:
       - .env
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+      INTERNAL_API_URL: ${INTERNAL_API_URL:-http://api:3001}
       NEXT_PUBLIC_APP_NAME: Платформа проектов ТюмГУ
     ports:
       - "127.0.0.1:3000:3000"

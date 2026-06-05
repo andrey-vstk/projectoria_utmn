@@ -87,18 +87,17 @@ async function seedAdmin() {
     .trim();
   const password = process.env.SEED_ADMIN_PASSWORD || 'admin12345';
   const fullName = process.env.SEED_ADMIN_NAME || 'Администратор';
+
+  const existingAdmin = await prisma.user.findUnique({ where: { email } });
+  if (existingAdmin) {
+    return;
+  }
+
   const passwordHash = await bcrypt.hash(password, 10);
 
-  await prisma.user.upsert({
-    where: { email },
-    create: {
+  await prisma.user.create({
+    data: {
       email,
-      fullName,
-      passwordHash,
-      role: Role.ADMIN,
-      status: UserStatus.ACTIVE,
-    },
-    update: {
       fullName,
       passwordHash,
       role: Role.ADMIN,
