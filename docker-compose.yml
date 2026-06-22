@@ -1,0 +1,122 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: projectoria-postgres
+    environment:
+      POSTGRES_DB: projectoria
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d projectoria"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: projectoria-redis
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: projectoria-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/projectoria?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-Платформа ТюмГУ <noreply@utmn.local>}
+      API_URL: ${API_URL}
+      APP_URL: ${APP_URL}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+    ports:
+      - "127.0.0.1:3001:3001"
+    command: sh -c "npm run prisma:deploy && npm run seed && npm run start:prod"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+        INTERNAL_API_URL: ${INTERNAL_API_URL:-http://api:3001}
+    container_name: projectoria-web
+    depends_on:
+      - api
+    env_file:
+      - .env
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+      INTERNAL_API_URL: ${INTERNAL_API_URL:-http://api:3001}
+      NEXT_PUBLIC_APP_NAME: Платформа проектов ТюмГУ
+    ports:
+      - "127.0.0.1:3000:3000"
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: projectoria-caddy
+    depends_on:
+      - web
+      - api
+    env_file:
+      - .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: projectoria-n8n
+    depends_on:
+      - ollama
+    environment:
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - N8N_SECURE_COOKIE=false
+      - N8N_RUNNERS_ENABLED=true
+    ports:
+      - "127.0.0.1:5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: projectoria-ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+volumes:
+  pg_data:
+  redis_data:
+  n8n_data:
+  ollama_data:
+  caddy_data:
+  caddy_config:

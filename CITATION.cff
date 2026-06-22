@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: "Если вы используете это программное обеспечение, пожалуйста, укажите ссылку на него."
+title: "Проектория: платформа поддержки инициации университетских проектов"
+type: software
+authors:
+  - family-names: "Афонасьев"
+    given-names: "Андрей Дмитриевич"
+    affiliation: "Тюменский государственный университет"
+  - family-names: "Фень"
+    given-names: "Антон Ильич"
+    affiliation: "Тюменский государственный университет"
+version: 1.0.0
+date-released: 2026-06-22
+repository-code: "https://github.com/andrey-vstk/projectoria_utmn"
+abstract: >-
+  Платформа для автоматизации ранней стадии инициации университетских
+  проектов: регистрации и LLM-анализа запросов, подбора подразделений по
+  компетенциям, подготовки рассылок и сбора откликов.
+keywords:
+  - university project initiation
+  - large language models
+  - workflow automation
+  - n8n
+  - Ollama
+  - Next.js
+  - NestJS
+  - PostgreSQL

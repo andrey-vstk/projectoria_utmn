@@ -1,0 +1,230 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  INITIATOR
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum ProjectStatus {
+  DRAFT
+  QUEUED
+  PROCESSING
+  READY_FOR_REVIEW
+  APPROVED
+  SENDING
+  SENT
+  FAILED
+}
+
+enum AnalysisStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum MailingStatus {
+  DRAFT
+  QUEUED
+  SENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+enum NotificationType {
+  RESPONSE_RECEIVED
+  SYSTEM
+}
+
+enum ResponseDecision {
+  ACCEPTED
+  DECLINED
+}
+
+model User {
+  id           String         @id @default(uuid())
+  email        String         @unique
+  fullName     String
+  passwordHash String
+  role         Role           @default(INITIATOR)
+  status       UserStatus     @default(ACTIVE)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  projects     Project[]
+  notifications Notification[]
+
+  @@index([role])
+  @@index([status])
+}
+
+model Department {
+  id           String                @id @default(uuid())
+  code         String                @unique
+  name         String
+  description  String?
+  competencies String[]              @default([])
+  isActive     Boolean               @default(true)
+  deletedAt    DateTime?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  recipients   DepartmentRecipient[]
+  suggestions  DepartmentSuggestion[]
+  mailings     Mailing[]
+  responses    Response[]
+
+  @@index([isActive])
+  @@index([deletedAt])
+}
+
+model DepartmentRecipient {
+  id           String      @id @default(uuid())
+  departmentId String
+  department   Department  @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  email        String
+  displayName  String?
+  competencies String[]    @default([])
+  isActive     Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([departmentId])
+}
+
+model Project {
+  id              String         @id @default(uuid())
+  title           String
+  sourceText      String
+  status          ProjectStatus  @default(DRAFT)
+  authorId        String
+  author          User           @relation(fields: [authorId], references: [id])
+  analysis        AnalysisResult?
+  mailings        Mailing[]
+  responses       Response[]
+  notifications   Notification[]
+  queuedAt        DateTime?
+  processingAt    DateTime?
+  readyAt         DateTime?
+  approvedAt      DateTime?
+  sendingAt       DateTime?
+  sentAt          DateTime?
+  failedAt        DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([authorId])
+  @@index([status])
+}
+
+model AnalysisResult {
+  id               String                 @id @default(uuid())
+  projectId         String                 @unique
+  project           Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  summary           String
+  tasksJson         Json
+  rawJson           Json
+  generationStatus  AnalysisStatus         @default(PENDING)
+  llmProvider       String
+  llmModel          String?
+  errorMessage      String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  suggestions       DepartmentSuggestion[]
+
+  @@index([generationStatus])
+}
+
+model DepartmentSuggestion {
+  id               String         @id @default(uuid())
+  analysisResultId String
+  analysisResult   AnalysisResult @relation(fields: [analysisResultId], references: [id], onDelete: Cascade)
+  departmentId     String
+  department       Department     @relation(fields: [departmentId], references: [id])
+  relevanceReason  String
+  problemFragment  String
+  adaptedPitch     String
+  emailSubject     String
+  emailBody        String
+  includeInMailing Boolean        @default(true)
+  customSubject    String?
+  customBody       String?
+  customRecipients Json?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@unique([analysisResultId, departmentId])
+  @@index([departmentId])
+}
+
+model Mailing {
+  id            String        @id @default(uuid())
+  projectId     String
+  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  departmentId  String
+  department    Department    @relation(fields: [departmentId], references: [id])
+  subject       String
+  body          String
+  recipients    Json
+  status        MailingStatus @default(DRAFT)
+  sentAt        DateTime?
+  errorMessage  String?
+  responseToken String        @unique
+  tokenUsed     Boolean       @default(false)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  response      Response?
+
+  @@index([projectId])
+  @@index([departmentId])
+  @@index([status])
+}
+
+model Response {
+  id             String      @id @default(uuid())
+  projectId      String
+  project        Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  departmentId   String
+  department     Department  @relation(fields: [departmentId], references: [id])
+  mailingId      String      @unique
+  mailing        Mailing     @relation(fields: [mailingId], references: [id], onDelete: Cascade)
+  responderEmail String?
+  responderName  String?
+  decision       ResponseDecision @default(ACCEPTED)
+  ipAddress      String?
+  userAgent      String?
+  tokenSnapshot  String
+  respondedAt    DateTime    @default(now())
+  createdAt      DateTime    @default(now())
+
+  @@index([projectId])
+  @@index([departmentId])
+  @@index([respondedAt])
+}
+
+model Notification {
+  id         String           @id @default(uuid())
+  userId     String
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId  String?
+  project    Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  type       NotificationType
+  title      String
+  message    String
+  isRead     Boolean          @default(false)
+  createdAt  DateTime         @default(now())
+
+  @@index([userId, isRead])
+  @@index([projectId])
+}
